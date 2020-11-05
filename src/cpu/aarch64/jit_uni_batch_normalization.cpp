@@ -127,7 +127,7 @@ struct jit_bnorm_t : public jit_generator {
 
     // Relu section
     bool with_relu, with_relu_inf_only;
-    ZReg vzero; // is_fwd() ? vdiff_beta : vbeta
+    ZReg vzero {0}; // Index 0 is temporal value. is_fwd() ? vdiff_beta : vbeta
     XReg reg_ws = reg_roff;
     Label l_relu_mask_avx2;
     PReg kstore_mask = PReg(1);
