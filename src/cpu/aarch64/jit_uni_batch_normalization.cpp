@@ -1,6 +1,6 @@
 /*******************************************************************************
 * Copyright 2017-2020 Intel Corporation
-* Copyright 2020 FUJITSU LIMITED  
+* Copyright 2020 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -44,10 +44,10 @@ namespace {
 
 using namespace memory_tracking::names;
 
-namespace barrier = simple_barrier;
 using namespace Xbyak_aarch64;
+namespace barrier = simple_barrier;
 
-typedef float acc_data_t;
+using acc_data_t = float;
 
 template <cpu_isa_t isa>
 struct jit_bnorm_t : public jit_generator {
@@ -2279,7 +2279,9 @@ struct jit_bnorm_t : public jit_generator {
         //                        || isa == avx512_mic,
         //                "unsupported isa");
 
-        const int simd_w = cpu_isa_traits<isa>::vlen / sizeof(acc_data_t);
+        const int simd_w = isa == asimd
+                ? 8
+                : cpu_isa_traits<isa>::vlen / sizeof(acc_data_t);
         is_bf16_ = bdesc_->desc()->data_desc.data_type == data_type::bf16;
         size_t dt_size
                 = types::data_type_size(bdesc_->desc()->data_desc.data_type);
@@ -2294,7 +2296,9 @@ struct jit_bnorm_t : public jit_generator {
         //unroll_regs = isa == avx512_common && !is_spatial_thr_ ? 4 : 1;
         unroll_blocks = !is_spatial_thr_ ? 4 : 1;
         unroll_regs = !is_spatial_thr_ ? 4 : 1;
+    }
 
+    void generate() override {
         preamble();
 
 #if 0
@@ -2333,8 +2337,6 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void operator()(const call_params_t *p) { jit_generator::operator()(p); }
-
-    ~jit_bnorm_t() {}
 };
 } // namespace
 
@@ -2360,7 +2362,7 @@ struct driver_t : public c_compatible {
                                 : (data_size >= l3_size_ / 2 && l3_size_ > 0);
     }
 
-    ~driver_t() {}
+    ~driver_t() = default;
 
     static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
             const batch_normalization_pd_t *bdesc) {
@@ -2513,10 +2515,13 @@ struct driver_t : public c_compatible {
         }
     }
 
+    status_t create_kernel() { return ker_.create_kernel(); }
+
 private:
     enum {
-        simd_w = cpu_isa_traits<isa>::vlen
-                / sizeof(acc_data_t) // BF16 will expand to FP32
+        simd_w = isa == asimd ? 8
+                              : cpu_isa_traits<isa>::vlen
+                        / sizeof(acc_data_t) // BF16 will expand to FP32
     };
 
     static bool use_tmp_stats(const batch_normalization_pd_t *bdesc) {
@@ -2598,8 +2603,12 @@ status_t jit_uni_batch_normalization_fwd_t<isa>::pd_t::init(engine_t *engine) {
 template <cpu_isa_t isa>
 jit_uni_batch_normalization_fwd_t<isa>::jit_uni_batch_normalization_fwd_t(
         const pd_t *apd)
-    : primitive_t(apd) {
-    bnorm_driver_ = new bnorm_impl::driver_t<isa>(pd());
+    : primitive_t(apd) {}
+
+template <cpu_isa_t isa>
+status_t jit_uni_batch_normalization_fwd_t<isa>::init(engine_t *engine) {
+    CHECK(safe_ptr_assign(bnorm_driver_, new bnorm_impl::driver_t<isa>(pd())));
+    return bnorm_driver_->create_kernel();
 }
 
 template <cpu_isa_t isa>
@@ -2699,8 +2708,12 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
 template <cpu_isa_t isa>
 jit_uni_batch_normalization_bwd_t<isa>::jit_uni_batch_normalization_bwd_t(
         const pd_t *apd)
-    : primitive_t(apd) {
-    bnorm_driver_ = new bnorm_impl::driver_t<isa>(pd());
+    : primitive_t(apd) {}
+
+template <cpu_isa_t isa>
+status_t jit_uni_batch_normalization_bwd_t<isa>::init(engine_t *engine) {
+    CHECK(safe_ptr_assign(bnorm_driver_, new bnorm_impl::driver_t<isa>(pd())));
+    return bnorm_driver_->create_kernel();
 }
 
 template <cpu_isa_t isa>
@@ -2735,14 +2748,10 @@ jit_uni_batch_normalization_bwd_t<isa>::~jit_uni_batch_normalization_bwd_t() {
 }
 
 /* struct instantiation */
-//template struct jit_uni_batch_normalization_fwd_t<sse41>;
-//template struct jit_uni_batch_normalization_bwd_t<sse41>;
-//template struct jit_uni_batch_normalization_fwd_t<avx2>;
-//template struct jit_uni_batch_normalization_bwd_t<avx2>;
-//template struct jit_uni_batch_normalization_fwd_t<avx512_common>;
-//template struct jit_uni_batch_normalization_bwd_t<avx512_common>;
-//template struct jit_uni_batch_normalization_fwd_t<sve_512>;
-//template struct jit_uni_batch_normalization_bwd_t<sve_512>;
+template struct jit_uni_batch_normalization_fwd_t<asimd>;
+template struct jit_uni_batch_normalization_bwd_t<asimd>;
+template struct jit_uni_batch_normalization_fwd_t<sve_512>;
+template struct jit_uni_batch_normalization_bwd_t<sve_512>;
 
 } // namespace aarch64
 } // namespace cpu
