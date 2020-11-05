@@ -1,5 +1,6 @@
 /*******************************************************************************
 * Copyright 2017-2020 Intel Corporation
+* Copyright 2020 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -24,25 +25,27 @@ namespace cpu {
 namespace aarch64 {
 
 namespace simple_barrier {
-using namespace Xbyak_aarch64;
 
-void generate(
-        jit_generator &code, XReg reg_ctx, XReg reg_nthr) {
+void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
+        Xbyak_aarch64::XReg reg_nthr) {
 #define BAR_CTR_OFF offsetof(ctx_t, ctr)
 #define BAR_SENSE_OFF offsetof(ctx_t, sense)
+    using namespace Xbyak_aarch64;
 
     XReg reg_tmp = [&]() {
         /* returns register which is neither reg_ctx nor reg_nthr */
-        XReg regs[] = {XReg(0), XReg(1), XReg(2)};
+        const int regs[] = {0, 1, 2};
         for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i)
-            if (!utils::one_of(regs[i], reg_ctx, reg_nthr)) return regs[i];
-        return regs[0]; /* should not happen */
+            if (!utils::one_of(i, reg_ctx.getIdx(), reg_nthr.getIdx()))
+                return XReg(i);
+        return XReg(0); /* should not happen */
     }();
 
-    XReg x_tmp_0 {23};
-    XReg x_tmp_1 {24};
-    XReg x_tmp_2 {25};
-    XReg x_tmp_3 {26};
+    XReg x_tmp_0(23);
+    XReg x_tmp_1(24);
+    XReg x_tmp_2(25);
+    XReg x_tmp_3(26);
+    XReg sp(31);
 
     Label barrier_exit_label, barrier_exit_restore_label, spin_label;
 
@@ -102,9 +105,23 @@ void generate(
 #undef BAR_SENSE_OFF
 }
 
+/** jit barrier generator */
+struct jit_t : public jit_generator {
+
+    void generate() override {
+        simple_barrier::generate(*this, abi_param1, abi_param2);
+        ret();
+    }
+
+    // TODO: Need to check status
+    jit_t() { create_kernel(); }
+
+    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_t)
+};
+
 void barrier(ctx_t *ctx, int nthr) {
     static jit_t j; /* XXX: constructed on load ... */
-    j.barrier(ctx, nthr); // barrier
+    j(ctx, nthr);
 }
 
 } // namespace simple_barrier

@@ -1,5 +1,6 @@
 /*******************************************************************************
 * Copyright 2017-2020 Intel Corporation
+* Copyright 2020 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -28,7 +29,6 @@ namespace cpu {
 namespace aarch64 {
 
 namespace simple_barrier {
-using namespace Xbyak_aarch64;
 
 #ifdef _WIN32
 #define CTX_ALIGNMENT 64
@@ -61,6 +61,10 @@ STRUCT_ALIGN(
             char pad2[CACHE_LINE_SIZE - 1 * sizeof(size_t)];
         });
 
+template <typename ctx_t>
+inline void ctx_init(ctx_t *ctx) {
+    *ctx = utils::zero<ctx_t>();
+}
 void barrier(ctx_t *ctx, int nthr);
 
 /** injects actual barrier implementation into another jitted code
@@ -69,41 +73,8 @@ void barrier(ctx_t *ctx, int nthr);
  *   reg_ctx   -- read-only register with pointer to the barrier context
  *   reg_nnthr -- read-only register with the # of synchronizing threads
  */
-void generate(jit_generator &code, XReg reg_ctx, XReg reg_nthr);
-
-/** jit barrier generator */
-struct jit_t : public jit_generator {
-private:
-
-    XReg reg_tmp = x28;
-    XReg reg_tmp_imm = x29;
-    XReg reg_tmp_ofs = x30;
-
-    /** injects actual barrier implementation into another jitted code
-     * @params:
-     *   reg_ctx   -- read-only register with pointer to the barrier context
-     *   reg_nnthr -- read-only register with the # of synchronizing threads
-     */
-    //void generate(Xbyak::Xbyak_aarch64::XReg reg_ctx, Xbyak::Xbyak_aarch64::XReg reg_nthr);
-
-public:
-    void (*barrier)(ctx_t *ctx, size_t nthr);
-
-    jit_t() {
-        this->preamble();
-        simple_barrier::generate(*this, abi_param1, abi_param2);
-        this->postamble();
-        barrier = reinterpret_cast<decltype(barrier)>(
-                const_cast<uint8_t *>(this->getCode()));
-    }
-
-    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_t)
-};
-
-template <typename ctx_t>
-inline void ctx_init(ctx_t *ctx) {
-    *ctx = utils::zero<ctx_t>();
-}
+void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
+        Xbyak_aarch64::XReg reg_nthr);
 
 } // namespace simple_barrier
 

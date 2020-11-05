@@ -1,5 +1,6 @@
 /*******************************************************************************
 * Copyright 2017-2020 Intel Corporation
+* Copyright 2020 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -46,19 +47,16 @@ struct jit_uni_batch_normalization_fwd_t : public primitive_t {
                 const batch_normalization_fwd_pd_t *hint_fwd_pd)
             : cpu_batch_normalization_fwd_pd_t(adesc, attr, hint_fwd_pd) {}
 
-        DECLARE_COMMON_PD_T(
-                "jit:uni", jit_uni_batch_normalization_fwd_t); 
-                //"bnorm_jit:", jit_uni_batch_normalization_fwd_t); 
-//                        (this->desc()->data_desc.data_type == data_type::bf16)
-//                                ? (mayiuse(avx512_core_bf16)
-  //                                              ? avx512_core_bf16
-    //                                            : bf16_emulation_t::get_isa())
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("bnorm_jit:", isa, ""),
+                jit_uni_batch_normalization_fwd_t);
 
         status_t init(engine_t *engine);
     };
 
     jit_uni_batch_normalization_fwd_t(const pd_t *apd);
     ~jit_uni_batch_normalization_fwd_t();
+
+    status_t init(engine_t *engine) override;
 
     status_t execute(const exec_ctx_t &ctx) const override;
 
@@ -76,18 +74,16 @@ struct jit_uni_batch_normalization_bwd_t : public primitive_t {
                 const batch_normalization_fwd_pd_t *hint_fwd_pd)
             : cpu_batch_normalization_bwd_pd_t(adesc, attr, hint_fwd_pd) {}
 
-        DECLARE_COMMON_PD_T(
-                "jit:uni", jit_uni_batch_normalization_bwd_t);
-                       // (this->desc()->data_desc.data_type == data_type::bf16)
-                                //? (mayiuse(avx512_core_bf16)
-                                  //              ? avx512_core_bf16
-                                    //            : bf16_emulation_t::get_isa())
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("bnorm_jit:", isa, ""),
+                jit_uni_batch_normalization_bwd_t);
 
         status_t init(engine_t *engine);
     };
 
     jit_uni_batch_normalization_bwd_t(const pd_t *apd);
     ~jit_uni_batch_normalization_bwd_t();
+
+    status_t init(engine_t *engine) override;
 
     status_t execute(const exec_ctx_t &ctx) const override;
 
