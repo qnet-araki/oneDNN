@@ -496,7 +496,7 @@ struct jit_bnorm_t : public jit_generator {
         }
     }
 
-    void uni_store_spat_data(const ZReg &z, const XReg &x) {
+    void uni_store_spat_data(const XReg &x, const ZReg &z) {
         if (is_bf16_) {
 #if 0
                 // convert bf16 input to f32
@@ -1941,11 +1941,11 @@ struct jit_bnorm_t : public jit_generator {
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff) add_imm(x_tmp_1, x_tmp_0, coff, x_tmp_1);
-                    uni_load_maybe_tail(vdiff_gamma, ptr(x_tmp_1));
+                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1);
                     if (coff || chan_data_offt)
                         add_imm(x_tmp_1, x_tmp_0, coff + chan_data_offt,
                                 x_tmp_1); // error?
-                    uni_load_maybe_tail(vdiff_beta, ptr(x_tmp_1));
+                    uni_load_maybe_tail(vdiff_beta, x_tmp_1);
                     add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws_off_copy,
                             x_tmp_1);
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
@@ -2001,7 +2001,7 @@ struct jit_bnorm_t : public jit_generator {
                         add(x_tmp_0, XReg(IDX(reg_diff_src)),
                                 XReg(IDX(reg_soff_nspc)));
                         if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(x_tmp_0, ZReg(idx));
+                        uni_store_spat_data(x_tmp_0, ZReg(idx));
                     }
 
                     coff += vlen;
