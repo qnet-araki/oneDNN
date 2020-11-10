@@ -34,7 +34,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
 
     XReg reg_tmp = [&]() {
         /* returns register which is neither reg_ctx nor reg_nthr */
-        const int regs[] = {0, 1, 2};
+        const int regs[] = {0, 3, 1};
         for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); ++i)
             if (!utils::one_of(i, reg_ctx.getIdx(), reg_nthr.getIdx()))
                 return XReg(i);
@@ -53,13 +53,15 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.b(LS, barrier_exit_label);
 
     code.sub(sp, sp, 8);
-    code.str(reg_tmp, ptr(sp));
+    code.mov(x_tmp_3, sp);
+    code.str(reg_tmp, ptr(x_tmp_3));
 
     /* take and save current sense */
     code.add_imm(x_tmp_0, reg_ctx, BAR_SENSE_OFF, x_tmp_0);
     code.ldr(reg_tmp, ptr(x_tmp_0));
     code.sub(sp, sp, 8);
-    code.str(reg_tmp, ptr(sp));
+    code.mov(x_tmp_3, sp);
+    code.str(reg_tmp, ptr(x_tmp_3));
     code.mov(reg_tmp, 1);
 
 #if 0
@@ -92,9 +94,9 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.cmp(reg_tmp, x_tmp_1);
     code.b(EQ, spin_label);
 
-#ifdef DNNL_INDIRECT_JIT_AARCH64
-    code.CodeGeneratorAArch64::dmb(ISH);
-#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
+//#ifdef DNNL_INDIRECT_JIT_AARCH64
+    code.CodeGenerator::dmb(ISH);
+//#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
 
     code.CodeGenerator::L(barrier_exit_restore_label);
     code.ldr(reg_tmp, ptr(sp));
