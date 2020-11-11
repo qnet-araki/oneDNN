@@ -91,13 +91,13 @@ struct jit_bnorm_t : public jit_generator {
     XReg reg_param = abi_param1;
 
     XReg reg_scale_shift = rbx;
-    XReg reg_rbuf1 = abi_not_param1;
+    XReg reg_rbuf1 = x7;
     XReg reg_rbuf2 = rdx;
     XReg reg_coff_max_fwd_copy = reg_rbuf2;
 
     XReg reg_mean = rbp;
     XReg reg_var = reg_param;
-    XReg reg_diff_scale_shift = rax;
+    XReg reg_diff_scale_shift = x1;
     XReg reg_coff_max_bwd_copy = reg_diff_scale_shift;
 
     XReg reg_coff = x8;
@@ -136,7 +136,7 @@ struct jit_bnorm_t : public jit_generator {
     PReg p_512 = p7;
     PReg p_lsb_256 = p6;
     PReg p_lsb_128 = p5;
-    PReg p_tmp0 = p4;
+    PReg p_tmp0 = p8;
 
     XReg x_tmp_0 {23};
     XReg x_tmp_1 {24};
@@ -165,38 +165,24 @@ struct jit_bnorm_t : public jit_generator {
 
     size_t unroll_blocks;
     size_t unroll_regs;
-    ZReg vbuf = z20;
-    ZReg vdiff_beta = z21;
-    ZReg vdiff_gamma = z22;
-    ZReg vsqrtvar = z23;
-    ZReg vone = z24;
-    ZReg vmean = z25;
-    ZReg vgamma = z26;
-    ZReg vbeta = z27;
-    ZReg veps = z28;
-    ZReg vchan_size = z29;
 
-    const std::vector<uint32_t> tmp_vec_idx = {31, 30};
-#if 0
-    ZReg vbuf = ZReg(isa == avx512_common ? 20 : 5);
-    ZReg vdiff_beta = ZReg(isa == avx512_common ? 21 : 6);
-    ZReg vdiff_gamma = ZReg(isa == avx512_common ? 22 : 7);
-    ZReg vsqrtvar = ZReg(isa == avx512_common ? 23 : 8);
-    ZReg vone = ZReg(isa == avx512_common ? 24 : 9);
-    ZReg vmean = ZReg(isa == avx512_common ? 25 : 10);
-    ZReg vgamma = ZReg(isa == avx512_common ? 26 : 11);
-    ZReg vbeta = ZReg(isa == avx512_common ? 27 : 12);
-    ZReg veps = ZReg(isa == avx512_common ? 28 : 13);
-    ZReg vchan_size = ZReg(isa == avx512_common ? 29 : 14);
+    ZReg vbuf = ZReg(isa == sve_512 ? 20 : 5);
+    ZReg vdiff_beta = ZReg(isa == sve_512 ? 21 : 6);
+    ZReg vdiff_gamma = ZReg(isa == sve_512 ? 22 : 7);
+    ZReg vsqrtvar = ZReg(isa == sve_512 ? 23 : 8);
+    ZReg vone = ZReg(isa == sve_512 ? 24 : 9);
+    ZReg vmean = ZReg(isa == sve_512 ? 25 : 10);
+    ZReg vgamma = ZReg(isa == sve_512 ? 26 : 11);
+    ZReg vbeta = ZReg(isa == sve_512 ? 27 : 12);
+    ZReg veps = ZReg(isa == sve_512 ? 28 : 13);
+    ZReg vchan_size = ZReg(isa == sve_512 ? 29 : 14);
 
     const std::vector<uint32_t> tmp_vec_idx
-            = {31, isa == avx512_common ? 20 : 5};
-#endif // #if 0
+            = {31, isa == sve_512 ? 20 : 5};
 
     /* Caution: Chose predicate registers not used by x64's implementation. */
     ZReg z_tmp0 = z31;
-    //ZReg z_tmp1 = isa == avx512_common ? z20 : z5;
-    ZReg z_tmp1 = z30;
+    ZReg z_tmp1 = isa == sve_512 ? z20 : z5;
     ZReg z_relu_mask_avx2 = z30;
 
     const std::vector<ZReg> z_tmp_vec = {z_tmp0, z_tmp1};
@@ -427,7 +413,7 @@ struct jit_bnorm_t : public jit_generator {
         uzp1(p_tmp0.b, p_mask, p_mask);
         uzp1(p_tmp0.b, p_tmp0.b, p_tmp0.b);
         sub(x22, x22, 8);
-        str(p_tmp0, ptr(x22));
+        str(p_tmp0, ptr(x22)); // SEGV
         ldurh(w_tmp_0, ptr(x22));
         add(x22, x22, 8);
         strh(w_tmp_0, ptr(x_tmp_1));
@@ -1428,8 +1414,7 @@ struct jit_bnorm_t : public jit_generator {
                             if (with_relu_inf_only) {
                                 uni_vmaxps_aarch64(v, v, vzero);
                             } else if (with_relu) {
-                                if (true)
-                                    //if (isa == avx512_common)
+                                if (isa == sve_512)
                                     fwd_process_relu_avx512_common(v, offt);
                             }
                             if (stream_store_allowed) {
@@ -1602,8 +1587,7 @@ struct jit_bnorm_t : public jit_generator {
                         if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
                         uni_load_spat_data(t2, x_tmp_0);
                         if (with_relu) {
-                            if (true)
-                                //if (isa == avx512_common)
+                            if (isa == sve_512)
                                 bwd_process_relu_avx512_common(t2, offt);
                             else
                                 assert(false);
@@ -1695,8 +1679,7 @@ struct jit_bnorm_t : public jit_generator {
                 uni_load_spat_data(ZReg(sp_idx + 1), x_tmp_0);
 
                 if (with_relu) {
-                    //if (isa == avx512_common)
-                    if (true)
+                    if (isa == sve_512)
                         bwd_process_relu_avx512_common(ZReg(sp_idx + 1), offt);
                     else
                         assert(false);
@@ -1819,8 +1802,7 @@ struct jit_bnorm_t : public jit_generator {
                             if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
                             uni_load_spat_data(v, x_tmp_0);
                             if (with_relu) {
-                                if (true)
-                                    //if (isa == avx512_common)
+                                if (isa == sve_512)
                                     bwd_process_relu_avx512_common(v, offt);
                                 else
                                     assert(false);
@@ -1941,7 +1923,7 @@ struct jit_bnorm_t : public jit_generator {
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff) add_imm(x_tmp_1, x_tmp_0, coff, x_tmp_1);
-                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1);
+                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1); // SEGV
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff || chan_data_offt)
                         add_imm(x_tmp_1, x_tmp_0, coff + chan_data_offt,
@@ -1964,8 +1946,7 @@ struct jit_bnorm_t : public jit_generator {
                     uni_load_spat_data(ZReg(idx), x_tmp_0);
 
                     if (with_relu) {
-                        if (true)
-                            //if (isa == avx512_common)
+                        if (isa == sve_512)
                             bwd_process_relu_avx512_common(ZReg(idx), offt);
                         else
                             assert(false);
@@ -2570,8 +2551,8 @@ status_t jit_uni_batch_normalization_fwd_t<isa>::pd_t::init(engine_t *engine) {
     if (!ok) return status::unimplemented;
 
     const memory_desc_wrapper src_d(src_md());
+    //if (isa == sve_512) {
     if (true) {
-        //if (isa == avx512_common) {
         if (!src_d.matches_one_of_tag(nChw16c, nCdhw16c, nhwc, ndhwc))
             return status::unimplemented;
     } else {
@@ -2668,7 +2649,7 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
     const memory_desc_wrapper diff_src_d(diff_src_md());
 
     format_tag_t src_tag, diff_src_tag;
-    //if (isa == avx512_common) {
+//    if (isa == sve_512) {
     if (true) {
         src_tag = src_d.matches_one_of_tag(nChw16c, nCdhw16c, nhwc, ndhwc);
         diff_src_tag
