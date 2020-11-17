@@ -71,7 +71,7 @@ struct jit_bnorm_t : public jit_generator {
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_bnorm_t)
 
-    const int vlen = cpu_isa_traits<isa>::vlen;
+    const int vlen = isa == asimd ? 32 : cpu_isa_traits<isa>::vlen;
     int vlen_spat_data_; // set by ctor depending on data type (BF16 or FP32);
 
     const batch_normalization_pd_t *bdesc_;
@@ -91,13 +91,13 @@ struct jit_bnorm_t : public jit_generator {
     XReg reg_param = abi_param1;
 
     XReg reg_scale_shift = rbx;
-    XReg reg_rbuf1 = x7;
+    XReg reg_rbuf1 = x1;
     XReg reg_rbuf2 = rdx;
     XReg reg_coff_max_fwd_copy = reg_rbuf2;
 
     XReg reg_mean = rbp;
     XReg reg_var = reg_param;
-    XReg reg_diff_scale_shift = x1;
+    XReg reg_diff_scale_shift = x7;
     XReg reg_coff_max_bwd_copy = reg_diff_scale_shift;
 
     XReg reg_coff = x8;
@@ -231,7 +231,6 @@ struct jit_bnorm_t : public jit_generator {
         mb_offt = spat_step * spat_size;
         ws_mb_offt = (spat_step / (is_bf16_ ? 16 : 32)) * spat_size;
 
-        //if (isa == avx512_mic) {
         if (false) {
             t0_pf_offt = 4096;
             t1_pf_offt = 0;
@@ -277,7 +276,7 @@ struct jit_bnorm_t : public jit_generator {
         ldr(w_tmp_2, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(one, chan_size)));
         ldr(w_tmp_3, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(eps, one)));
 
-        if (vchan_size.isZReg()) {
+        if (isa == sve_512) {
             dup(ZRegS(IDX(vchan_size)), w_tmp_1);
             dup(ZRegS(IDX(vone)), w_tmp_2);
             dup(ZRegS(IDX(veps)), w_tmp_3);
@@ -412,8 +411,9 @@ struct jit_bnorm_t : public jit_generator {
             add_imm(x_tmp_1, x_tmp_1, offt / (1 << bit_shift()), x_tmp_0);
         uzp1(p_tmp0.b, p_mask, p_mask);
         uzp1(p_tmp0.b, p_tmp0.b, p_tmp0.b);
+	sub(x22, sp, 0x20000);
         sub(x22, x22, 8);
-        str(p_tmp0, ptr(x22)); // SEGV
+        str(p_tmp0, ptr(x22));
         ldurh(w_tmp_0, ptr(x22));
         add(x22, x22, 8);
         strh(w_tmp_0, ptr(x_tmp_1));
@@ -740,41 +740,41 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     XReg mean_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_mean)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-        return x_tmp_0;
+        add(x_tmp_2, XReg(IDX(reg_mean)), XReg(IDX(reg_coff)));
+        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     XReg var_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_var)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-        return x_tmp_0;
+        add(x_tmp_2, XReg(IDX(reg_var)), XReg(IDX(reg_coff)));
+        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     XReg diff_gamma_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-        return x_tmp_0;
+        add(x_tmp_2, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
+        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     XReg diff_beta_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
+        add(x_tmp_2, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
         if (offt || chan_data_offt)
-            add_imm(x_tmp_0, x_tmp_0, offt + chan_data_offt, x_tmp_1);
-        return x_tmp_0;
+            add_imm(x_tmp_2, x_tmp_2, offt + chan_data_offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     XReg gamma_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-        return x_tmp_0;
+        add(x_tmp_2, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
+        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     XReg beta_ptr(size_t offt = 0) {
-        add(x_tmp_0, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
+        add(x_tmp_2, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
         if (offt || chan_data_offt)
-            add_imm(x_tmp_0, x_tmp_0, offt + chan_data_offt, x_tmp_1);
-        return x_tmp_0;
+            add_imm(x_tmp_2, x_tmp_2, offt + chan_data_offt, x_tmp_1);
+        return x_tmp_2;
     }
 
     template <typename init_t, typename body_t, typename fini_t>
@@ -1228,7 +1228,7 @@ struct jit_bnorm_t : public jit_generator {
                 L(mean_reduction_thrs);
                 {
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-                    if (ZReg(1).isZReg()) {
+		    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         fadd(ZRegS(1), ZRegS(1), z_tmp0.s);
 #if 0
@@ -1249,7 +1249,7 @@ struct jit_bnorm_t : public jit_generator {
                     sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
                     cbnz(XReg(IDX(reg_ctr)), mean_reduction_thrs);
                 }
-                if (vchan_size.isZReg())
+		if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
 #if 0
                 else if (vchan_size.isYMM())
@@ -1261,8 +1261,12 @@ struct jit_bnorm_t : public jit_generator {
                 }
                 uni_store_maybe_tail(mean_ptr(), ZReg(1));
 
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
+		if (isa == sve_512)
+                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
+                            x_tmp_0);
+		else if (isa == asimd)
+                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
+                            x_tmp_0);
 
                 cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
                 b(LT, mean_reduction_channels);
@@ -1321,7 +1325,7 @@ struct jit_bnorm_t : public jit_generator {
                 L(var_reduction_thrs);
                 { // TODO: unroll (?)
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-                    if (ZReg(1).isZReg()) {
+		    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         fadd(ZRegS(1), ZRegS(1), z_tmp0.s);
 #if 0
@@ -1339,7 +1343,7 @@ struct jit_bnorm_t : public jit_generator {
                     sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
                     cbnz(XReg(IDX(reg_ctr)), var_reduction_thrs);
                 }
-                if (vchan_size.isZReg())
+		if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
 #if 0
                 else if (vchan_size.isYMM())
@@ -1923,11 +1927,11 @@ struct jit_bnorm_t : public jit_generator {
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff) add_imm(x_tmp_1, x_tmp_0, coff, x_tmp_1);
-                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1); // SEGV
+                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1);
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff || chan_data_offt)
                         add_imm(x_tmp_1, x_tmp_0, coff + chan_data_offt,
-                                x_tmp_1); // error?
+                                x_tmp_1);
                     uni_load_maybe_tail(vdiff_beta, x_tmp_1);
                     add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws_off_copy,
                             x_tmp_1);
@@ -2095,7 +2099,7 @@ struct jit_bnorm_t : public jit_generator {
         add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_dst, x_tmp_1);
         ldr(XReg(IDX(reg_diff_dst)), ptr(x_tmp_0));
         if (with_relu) {
-            //assert(isa == avx2 || isa == avx512_common);
+            assert(isa == sve_512);
             add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
             ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
         }
@@ -2165,7 +2169,7 @@ struct jit_bnorm_t : public jit_generator {
 
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), x_roff);
                     add(x_tmp_1, XReg(IDX(reg_rbuf2)), x_roff);
-                    if (ZReg(0).isZReg()) {
+		    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         ld1w(z_tmp1.s, p_512 / T_z, ptr(x_tmp_1));
 #if 0
@@ -2203,7 +2207,7 @@ struct jit_bnorm_t : public jit_generator {
         add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_src, x_tmp_1);
         ldr(XReg(IDX(reg_diff_src)), ptr(x_tmp_0));
         if (with_relu) {
-            //           assert(isa == avx2 || isa == avx512_common);
+            assert(isa == sve_512);
             add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
             ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
         }
@@ -2257,9 +2261,7 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     jit_bnorm_t(const batch_normalization_pd_t *bdesc) : bdesc_(bdesc) {
-        //        static_assert(isa == avx2 || isa == avx512_common
-        //                        || isa == avx512_mic,
-        //                "unsupported isa");
+        static_assert(isa == asimd || isa == sve_512, "unsupported isa");
 
         const int simd_w = isa == asimd
                 ? 8
@@ -2274,10 +2276,8 @@ struct jit_bnorm_t : public jit_generator {
                 bdesc_, is_nspc_, simd_w, dt_size);
         vlen_spat_data_ = vlen / (1 + is_bf16_); // 32B of BF16 -> 64B of FP32
 
-        //unroll_blocks = isa == avx512_common && !is_spatial_thr_ ? 4 : 1;
-        //unroll_regs = isa == avx512_common && !is_spatial_thr_ ? 4 : 1;
-        unroll_blocks = !is_spatial_thr_ ? 4 : 1;
-        unroll_regs = !is_spatial_thr_ ? 4 : 1;
+        unroll_blocks = isa == sve_512 && !is_spatial_thr_ ? 4 : 1;
+        unroll_regs = isa == sve_512 && !is_spatial_thr_ ? 4 : 1;
     }
 
     void generate() override {
@@ -2299,7 +2299,7 @@ struct jit_bnorm_t : public jit_generator {
         ptrue(p_lsb_256.b, VL32);
         ptrue(p_lsb_128.b, VL16);
 
-        prepare_tail_mask_avx512_common();
+        if (isa == sve_512) prepare_tail_mask_avx512_common();
 
         compute_static_strides();
         sub_imm(XReg(IDX(rsp)), XReg(IDX(rsp)), (int)stack_size_required,
@@ -2545,14 +2545,12 @@ status_t jit_uni_batch_normalization_fwd_t<isa>::pd_t::init(engine_t *engine) {
             && !has_zero_dim_memory() && one_of(ndims(), 4, 5)
             && one_of(src_md()->data_type, f32, bf16)
             && IMPLICATION(src_md()->data_type == bf16, false)
-            //&& IMPLICATION(src_md()->data_type == bf16, mayiuse(avx512_core))
             && check_scale_shift_data_type()
             && (attr()->has_default_values() || this->with_relu_post_op());
     if (!ok) return status::unimplemented;
 
     const memory_desc_wrapper src_d(src_md());
-    //if (isa == sve_512) {
-    if (true) {
+    if (isa == sve_512) {
         if (!src_d.matches_one_of_tag(nChw16c, nCdhw16c, nhwc, ndhwc))
             return status::unimplemented;
     } else {
@@ -2561,13 +2559,11 @@ status_t jit_uni_batch_normalization_fwd_t<isa>::pd_t::init(engine_t *engine) {
     }
 
     if (is_training() && fuse_norm_relu()) {
-        if (false) return status::unimplemented;
-        //if (isa < avx2) return status::unimplemented;
+        if (isa < sve_512) return status::unimplemented;
         init_default_ws(1);
     }
 
-    if (memory_desc_wrapper(src_md()).padded_dims()[1] != C())
-        //if (memory_desc_wrapper(src_md()).padded_dims()[1] != C() && isa < avx2)
+    if (memory_desc_wrapper(src_md()).padded_dims()[1] != C() && isa < sve_512)
         return status::unimplemented;
 
     // Only IC % 16 == 0 is supported for now
@@ -2641,7 +2637,6 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
                     everyone_is(bf16, src_md()->data_type,
                             diff_src_md()->data_type))
             && IMPLICATION(src_md()->data_type == bf16, false)
-            //&& IMPLICATION(src_md()->data_type == bf16, mayiuse(avx512_core))
             && check_scale_shift_data_type() && attr()->has_default_values();
     if (!ok) return status::unimplemented;
 
@@ -2649,8 +2644,7 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
     const memory_desc_wrapper diff_src_d(diff_src_md());
 
     format_tag_t src_tag, diff_src_tag;
-//    if (isa == sve_512) {
-    if (true) {
+    if (isa == sve_512) {
         src_tag = src_d.matches_one_of_tag(nChw16c, nCdhw16c, nhwc, ndhwc);
         diff_src_tag
                 = diff_src_d.matches_one_of_tag(nChw16c, nCdhw16c, nhwc, ndhwc);
@@ -2662,8 +2656,7 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
             && src_tag == diff_src_tag);
     if (!ok) return status::unimplemented;
 
-    //    if (memory_desc_wrapper(src_md()).padded_dims()[1] != C() && isa < avx2)
-    if (memory_desc_wrapper(src_md()).padded_dims()[1] != C())
+    if (memory_desc_wrapper(src_md()).padded_dims()[1] != C() && isa < sve_512)
         return status::unimplemented;
 
     // Only IC % 16 == 0 is supported for now
@@ -2673,8 +2666,7 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(engine_t *engine) {
     }
 
     if (fuse_norm_relu()) {
-        //if (isa < avx2) return status::unimplemented;
-        if (false) return status::unimplemented;
+        if (isa < sve_512) return status::unimplemented;
         init_default_ws(1);
         if (!compare_ws(hint_fwd_pd_)) return status::unimplemented;
     }
