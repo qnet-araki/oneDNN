@@ -138,6 +138,7 @@ struct jit_bnorm_t : public jit_generator {
     PReg p_lsb_128 = p5;
     PReg p_tmp0 = p8;
 
+    XReg x_translator_stack {22};
     XReg x_tmp_0 {23};
     XReg x_tmp_1 {24};
     XReg x_tmp_2 {25};
@@ -411,11 +412,11 @@ struct jit_bnorm_t : public jit_generator {
             add_imm(x_tmp_1, x_tmp_1, offt / (1 << bit_shift()), x_tmp_0);
         uzp1(p_tmp0.b, p_mask, p_mask);
         uzp1(p_tmp0.b, p_tmp0.b, p_tmp0.b);
-	sub(x22, sp, 0x20000);
-        sub(x22, x22, 8);
-        str(p_tmp0, ptr(x22));
-        ldurh(w_tmp_0, ptr(x22));
-        add(x22, x22, 8);
+	sub(x_translator_stack, rsp, 0x20000);
+        sub(x_translator_stack, x_translator_stack, 8);
+        str(p_tmp0, ptr(x_translator_stack));
+        ldurh(w_tmp_0, ptr(x_translator_stack));
+        add(x_translator_stack, x_translator_stack, 8);
         strh(w_tmp_0, ptr(x_tmp_1));
 
         sel(ZRegS(IDX(vdst)), PReg(IDX(kstore_mask)) / T_m, ZRegS(IDX(vdst)),
@@ -441,13 +442,14 @@ struct jit_bnorm_t : public jit_generator {
         if (offt / (1 << bit_shift()))
             add_imm(x_tmp_1, x_tmp_1, offt / (1 << bit_shift()), x_tmp_0);
 
-        sub(x22, x22, 8);
+//	mov(x_translator_stack, rsp);
+        sub(x_translator_stack, x_translator_stack, 8);
         ldurh(w_tmp_0, ptr(x_tmp_1));
-        strh(w_tmp_0, ptr(x22));
-        ldr(p_mask, ptr(x22));
+        strh(w_tmp_0, ptr(x_translator_stack));
+        ldr(p_mask, ptr(x_translator_stack));
         zip1(p_mask.b, p_mask.b, p_mask.b);
         zip1(p_mask.b, p_mask.b, p_mask.b);
-        add(x22, x22, 8);
+        add(x_translator_stack, x_translator_stack, 8);
 
         not_(p_tmp0.b, P_ALL_ONE / T_z, PRegB(IDX(kstore_mask)));
         mov(ZRegD(IDX(vdiff_dst)), ZRegD(IDX(vdiff_dst)));
@@ -1926,13 +1928,13 @@ struct jit_bnorm_t : public jit_generator {
                             (int)stack_off_diff_scale_shift, x_tmp_1);
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
-                    if (coff) add_imm(x_tmp_1, x_tmp_0, coff, x_tmp_1);
-                    uni_load_maybe_tail(vdiff_gamma, x_tmp_1);
+                    if (coff) add_imm(x_tmp_0, x_tmp_0, coff, x_tmp_1);
+                    uni_load_maybe_tail(vdiff_gamma, x_tmp_0);
                     add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
                     if (coff || chan_data_offt)
-                        add_imm(x_tmp_1, x_tmp_0, coff + chan_data_offt,
+                        add_imm(x_tmp_0, x_tmp_0, coff + chan_data_offt,
                                 x_tmp_1);
-                    uni_load_maybe_tail(vdiff_beta, x_tmp_1);
+                    uni_load_maybe_tail(vdiff_beta, x_tmp_0);
                     add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws_off_copy,
                             x_tmp_1);
                     ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
@@ -2282,6 +2284,7 @@ struct jit_bnorm_t : public jit_generator {
 
     void generate() override {
         preamble();
+	//sub(x_translator_stack, rsp, 0x20000);
 
 #if 0
         if (is_bf16_) {

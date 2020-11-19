@@ -46,22 +46,24 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     XReg x_tmp_2(25);
     XReg x_tmp_3(26);
     XReg sp(31);
+    XReg x_tmp_sp(4);
 
     Label barrier_exit_label, barrier_exit_restore_label, spin_label;
 
+    code.mov(x_tmp_sp, sp);
     code.cmp(reg_nthr, 1);
     code.b(LS, barrier_exit_label);
 
-    code.sub(sp, sp, 8);
-    code.mov(x_tmp_3, sp);
-    code.str(reg_tmp, ptr(x_tmp_3));
+    code.sub(x_tmp_sp, x_tmp_sp, 8);
+//    code.mov(x_tmp_3, sp);
+    code.str(reg_tmp, ptr(x_tmp_sp));
 
     /* take and save current sense */
     code.add_imm(x_tmp_0, reg_ctx, BAR_SENSE_OFF, x_tmp_0);
     code.ldr(reg_tmp, ptr(x_tmp_0));
-    code.sub(sp, sp, 8);
-    code.mov(x_tmp_3, sp);
-    code.str(reg_tmp, ptr(x_tmp_3));
+    code.sub(x_tmp_sp, x_tmp_sp, 8);
+//    code.mov(x_tmp_3, sp);
+    code.str(reg_tmp, ptr(x_tmp_sp));
     code.mov(reg_tmp, 1);
 
 #if 0
@@ -75,8 +77,8 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
     code.add_imm(reg_tmp, reg_tmp, 1, x_tmp_0);
     code.cmp(reg_tmp, reg_nthr);
-    code.ldr(reg_tmp, ptr(sp));
-    code.add(sp, sp, 8);
+    code.ldr(reg_tmp, ptr(x_tmp_sp));
+    code.add(x_tmp_sp, x_tmp_sp, 8);
     code.b(NE, spin_label);
 
     /* the last thread {{{ */
@@ -99,10 +101,11 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
 //#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
 
     code.CodeGenerator::L(barrier_exit_restore_label);
-    code.ldr(reg_tmp, ptr(sp));
-    code.add(sp, sp, 8);
+    code.ldr(reg_tmp, ptr(x_tmp_sp));
+    code.add(x_tmp_sp, x_tmp_sp, 8);
 
     code.CodeGenerator::L(barrier_exit_label);
+    code.mov(sp, x_tmp_sp);
 #undef BAR_CTR_OFF
 #undef BAR_SENSE_OFF
 }
