@@ -42,28 +42,32 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
         return XReg(0); /* should not happen */
     }();
 
-    XReg x_tmp_0(23);
-    XReg x_tmp_1(24);
-    XReg x_tmp_2(25);
-    XReg x_tmp_3(26);
-    XReg sp(31);
-    XReg x_tmp_sp(4);
+    const XReg x_tmp_0 = code.X_TMP_0;
+    const XReg x_tmp_1 = code.X_TMP_1;
+    const XReg x_tmp_2 = code.X_TMP_2;
+    const XReg x_tmp_sp = code.X_TMP_3;
+    const XReg sp = code.sp;
 
     Label barrier_exit_label, barrier_exit_restore_label, spin_label;
+    Label debug0, debug1;
+
+#if 0
+    code.CodeGenerator::L(debug0);
+    code.nop();
+    code.b(debug0);
+#endif
 
     code.mov(x_tmp_sp, sp);
     code.cmp(reg_nthr, 1);
-    code.b(LS, barrier_exit_label);
+    code.b(EQ, barrier_exit_label);
 
     code.sub(x_tmp_sp, x_tmp_sp, 8);
-//    code.mov(x_tmp_3, sp);
     code.str(reg_tmp, ptr(x_tmp_sp));
 
     /* take and save current sense */
     code.add_imm(x_tmp_0, reg_ctx, BAR_SENSE_OFF, x_tmp_0);
     code.ldr(reg_tmp, ptr(x_tmp_0));
     code.sub(x_tmp_sp, x_tmp_sp, 8);
-//    code.mov(x_tmp_3, sp);
     code.str(reg_tmp, ptr(x_tmp_sp));
     code.mov(WReg(IDX(reg_tmp)), 1);
 
@@ -74,7 +78,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     }
 #endif // #if 0
 
-    code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_1);
+    code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_2);
     code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
     code.adds(reg_tmp, reg_tmp, 1);
     code.cmp(reg_tmp, reg_nthr);
@@ -97,18 +101,24 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.cmp(reg_tmp, x_tmp_1);
     code.b(EQ, spin_label);
 
-//#ifdef DNNL_INDIRECT_JIT_AARCH64
+    //#ifdef DNNL_INDIRECT_JIT_AARCH64
     code.CodeGenerator::dmb(ISH);
-//#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
+    //#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
 
     code.CodeGenerator::L(barrier_exit_restore_label);
     code.ldr(reg_tmp, ptr(x_tmp_sp));
     code.add(x_tmp_sp, x_tmp_sp, 8);
 
     code.CodeGenerator::L(barrier_exit_label);
-    code.mov(sp, x_tmp_sp);
+    //    code.mov(sp, x_tmp_sp);
 #undef BAR_CTR_OFF
 #undef BAR_SENSE_OFF
+
+#if 0
+    code.CodeGenerator::L(debug1);
+    code.nop();
+    code.b(debug1);
+#endif
 }
 
 /** jit barrier generator */

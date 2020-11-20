@@ -138,7 +138,7 @@ struct jit_bnorm_t : public jit_generator {
     PReg p_lsb_128 = p5;
     PReg p_tmp0 = p8;
 
-//    XReg x_translator_stack {22};
+    //    XReg x_translator_stack {22};
     XReg x_tmp_0 {23};
     XReg x_tmp_1 {24};
     XReg x_tmp_2 {25};
@@ -178,8 +178,7 @@ struct jit_bnorm_t : public jit_generator {
     ZReg veps = ZReg(isa == sve_512 ? 28 : 13);
     ZReg vchan_size = ZReg(isa == sve_512 ? 29 : 14);
 
-    const std::vector<uint32_t> tmp_vec_idx
-            = {31, isa == sve_512 ? 20 : 5};
+    const std::vector<uint32_t> tmp_vec_idx = {31, isa == sve_512 ? 20 : 5};
 
     /* Caution: Chose predicate registers not used by x64's implementation. */
     ZReg z_tmp0 = z31;
@@ -788,7 +787,8 @@ struct jit_bnorm_t : public jit_generator {
             init(i);
         if (loop_unroll) {
             if (is_spatial_thr_) {
-                mov_imm(x_tmp_0, (int)stack_off_spat_size_loc);
+                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
+                        x_tmp_1);
                 ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
                 add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
                 ldr(x_tmp_0, ptr(x_tmp_0));
@@ -856,11 +856,11 @@ struct jit_bnorm_t : public jit_generator {
                         if (offt || t0_pf_offt)
                             add_imm(x_tmp_1, x_tmp_0, offt + t0_pf_offt,
                                     x_tmp_1);
-                        prfm(PLDL1KEEP, ptr(x_tmp_1));
+                        //                        prfm(PLDL1KEEP, ptr(x_tmp_1));
                         if (offt || t1_pf_offt)
                             add_imm(x_tmp_1, x_tmp_0, offt + t1_pf_offt,
                                     x_tmp_1);
-                        prfm(PLDL2KEEP, ptr(x_tmp_1));
+                        //                        prfm(PLDL2KEEP, ptr(x_tmp_1));
                     },
                     [=](size_t base_reg) {
                         ZReg b = ZReg(0);
@@ -1140,12 +1140,12 @@ struct jit_bnorm_t : public jit_generator {
                         if (offt || t0_pf_offt)
                             add_imm(x_tmp_1, x_tmp_0, offt + t0_pf_offt,
                                     x_tmp_1);
-                        prfm(PLDL1KEEP, ptr(x_tmp_1));
+                        //                        prfm(PLDL1KEEP, ptr(x_tmp_1));
 
                         if (offt || t1_pf_offt)
                             add_imm(x_tmp_1, x_tmp_0, offt + t1_pf_offt,
                                     x_tmp_1);
-                        prfm(PLDL2KEEP, ptr(x_tmp_1));
+                        //                        prfm(PLDL2KEEP, ptr(x_tmp_1));
                     },
                     [=](size_t base_reg) {
                         ZReg b = ZReg(0);
@@ -1228,7 +1228,7 @@ struct jit_bnorm_t : public jit_generator {
                 L(mean_reduction_thrs);
                 {
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-		    if (isa == sve_512) {
+                    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         fadd(ZRegS(1), ZRegS(1), z_tmp0.s);
 #if 0
@@ -1249,7 +1249,7 @@ struct jit_bnorm_t : public jit_generator {
                     sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
                     cbnz(XReg(IDX(reg_ctr)), mean_reduction_thrs);
                 }
-		if (isa == sve_512)
+                if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
 #if 0
                 else if (vchan_size.isYMM())
@@ -1261,10 +1261,10 @@ struct jit_bnorm_t : public jit_generator {
                 }
                 uni_store_maybe_tail(mean_ptr(), ZReg(1));
 
-		if (isa == sve_512)
+                if (isa == sve_512)
                     add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
                             x_tmp_0);
-		else if (isa == asimd)
+                else if (isa == asimd)
                     add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
                             x_tmp_0);
 
@@ -1325,7 +1325,7 @@ struct jit_bnorm_t : public jit_generator {
                 L(var_reduction_thrs);
                 { // TODO: unroll (?)
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-		    if (isa == sve_512) {
+                    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         fadd(ZRegS(1), ZRegS(1), z_tmp0.s);
 #if 0
@@ -1343,7 +1343,7 @@ struct jit_bnorm_t : public jit_generator {
                     sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
                     cbnz(XReg(IDX(reg_ctr)), var_reduction_thrs);
                 }
-		if (isa == sve_512)
+                if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
 #if 0
                 else if (vchan_size.isYMM())
@@ -1400,12 +1400,12 @@ struct jit_bnorm_t : public jit_generator {
                             if (offt || t0_pf_offt)
                                 add_imm(x_tmp_1, x_tmp_0, offt + t0_pf_offt,
                                         x_tmp_1);
-                            prfm(PLDL1KEEP, ptr(x_tmp_1));
+                            //                            prfm(PLDL1KEEP, ptr(x_tmp_1));
 
                             if (offt || t1_pf_offt)
                                 add_imm(x_tmp_1, x_tmp_0, offt + t1_pf_offt,
                                         x_tmp_1);
-                            prfm(PLDL2KEEP, ptr(x_tmp_1));
+                            //                            prfm(PLDL2KEEP, ptr(x_tmp_1));
                             fsub(ZRegS(IDX(v)), ZRegS(IDX(v)),
                                     ZRegS(IDX(vmean)));
                             if (bdesc_->use_scaleshift()) {
@@ -1605,20 +1605,20 @@ struct jit_bnorm_t : public jit_generator {
                         if (offt || t0_pf_offt)
                             add_imm(x_tmp_2, x_tmp_0, offt + t0_pf_offt,
                                     x_tmp_2);
-                        prfm(PLDL1KEEP, ptr(x_tmp_2));
+                        //                        prfm(PLDL1KEEP, ptr(x_tmp_2));
                         if (offt || t0_pf_offt)
                             add_imm(x_tmp_2, x_tmp_1, offt + t0_pf_offt,
                                     x_tmp_2);
-                        prfm(PLDL1KEEP, ptr(x_tmp_2));
+                        //                        prfm(PLDL1KEEP, ptr(x_tmp_2));
 
                         if (offt || t1_pf_offt)
                             add_imm(x_tmp_2, x_tmp_0, offt + t1_pf_offt,
                                     x_tmp_2);
-                        prfm(PLDL2KEEP, ptr(x_tmp_2));
+                        //                        prfm(PLDL2KEEP, ptr(x_tmp_2));
                         if (offt || t1_pf_offt)
                             add_imm(x_tmp_2, x_tmp_1, offt + t1_pf_offt,
                                     x_tmp_2);
-                        prfm(PLDL2KEEP, ptr(x_tmp_2));
+                        //                        prfm(PLDL2KEEP, ptr(x_tmp_2));
                     },
                     [=](size_t base_reg) {
                         ZReg b0 = ZReg(0);
@@ -1848,20 +1848,20 @@ struct jit_bnorm_t : public jit_generator {
                             if (offt || t0_pf_offt)
                                 add_imm(x_tmp_2, x_tmp_0, offt + t0_pf_offt,
                                         x_tmp_2);
-                            prfm(PLDL1KEEP, ptr(x_tmp_2));
+                            // prfm(PLDL1KEEP, ptr(x_tmp_2));
                             if (offt || t0_pf_offt)
                                 add_imm(x_tmp_2, x_tmp_1, offt + t0_pf_offt,
                                         x_tmp_2);
-                            prfm(PLDL1KEEP, ptr(x_tmp_2));
+                            // prfm(PLDL1KEEP, ptr(x_tmp_2));
 
                             if (offt || t1_pf_offt)
                                 add_imm(x_tmp_2, x_tmp_0, offt + t1_pf_offt,
                                         x_tmp_2);
-                            prfm(PLDL2KEEP, ptr(x_tmp_2));
+                            // prfm(PLDL2KEEP, ptr(x_tmp_2));
                             if (offt || t1_pf_offt)
                                 add_imm(x_tmp_2, x_tmp_1, offt + t1_pf_offt,
                                         x_tmp_2);
-                            prfm(PLDL2KEEP, ptr(x_tmp_2));
+                            // prfm(PLDL2KEEP, ptr(x_tmp_2));
                         },
                         [=](size_t base_reg) { UNUSED(base_reg); });
             };
@@ -2169,7 +2169,7 @@ struct jit_bnorm_t : public jit_generator {
 
                     add(x_tmp_0, XReg(IDX(reg_rbuf1)), x_roff);
                     add(x_tmp_1, XReg(IDX(reg_rbuf2)), x_roff);
-		    if (isa == sve_512) {
+                    if (isa == sve_512) {
                         ld1w(z_tmp0.s, p_512 / T_z, ptr(x_tmp_0));
                         ld1w(z_tmp1.s, p_512 / T_z, ptr(x_tmp_1));
 #if 0
