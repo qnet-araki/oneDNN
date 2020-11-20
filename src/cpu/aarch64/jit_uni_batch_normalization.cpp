@@ -1242,7 +1242,7 @@ struct jit_bnorm_t : public jit_generator {
                         fadd(VReg4S(1), VReg4S(1), VReg4S(tmp_vec_idx[0]));
                     }
 
-                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
+                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
                     uni_vmovups_aarch64(x_tmp_0, ZReg(0));
                     add(XReg(IDX(reg_roff)), XReg(IDX(reg_roff)),
                             XReg(IDX(reg_coff_max)));

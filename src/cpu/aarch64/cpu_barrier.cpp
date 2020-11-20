@@ -30,6 +30,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
         Xbyak_aarch64::XReg reg_nthr) {
 #define BAR_CTR_OFF offsetof(ctx_t, ctr)
 #define BAR_SENSE_OFF offsetof(ctx_t, sense)
+#define IDX(a) static_cast<uint32_t>(a.getIdx())
     using namespace Xbyak_aarch64;
 
     XReg reg_tmp = [&]() {
@@ -64,7 +65,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.sub(x_tmp_sp, x_tmp_sp, 8);
 //    code.mov(x_tmp_3, sp);
     code.str(reg_tmp, ptr(x_tmp_sp));
-    code.mov(reg_tmp, 1);
+    code.mov(WReg(IDX(reg_tmp)), 1);
 
 #if 0
     if (mayiuse(avx512_mic)) {
@@ -75,7 +76,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
 
     code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_1);
     code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
-    code.add_imm(reg_tmp, reg_tmp, 1, x_tmp_0);
+    code.adds(reg_tmp, reg_tmp, 1);
     code.cmp(reg_tmp, reg_nthr);
     code.ldr(reg_tmp, ptr(x_tmp_sp));
     code.add(x_tmp_sp, x_tmp_sp, 8);
