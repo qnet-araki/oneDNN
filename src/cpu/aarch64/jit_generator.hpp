@@ -120,7 +120,7 @@ public:
     inline size_t get_size_of_abi_save_regs() { return size_of_abi_save_regs; }
 
     void preamble() {
-	stp(x29, x30, pre_ptr(sp, -16));
+        stp(x29, x30, pre_ptr(sp, -16));
         /* x29 is a frame pointer. */
         mov(x29, sp);
         sub(sp, sp, static_cast<int64_t>(preserved_stack_size) - 16);
@@ -144,7 +144,7 @@ public:
         not_(P_MSB_384.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_384.b);
         not_(P_MSB_256.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_256.b);
         pfalse(P_ALL_ZERO.b);
-	mov(X_TRANSLATOR_STACK, sp);
+        mov(X_TRANSLATOR_STACK, sp);
     }
 
     void postamble() {
