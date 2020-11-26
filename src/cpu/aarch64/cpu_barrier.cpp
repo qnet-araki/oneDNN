@@ -69,7 +69,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.ldr(reg_tmp, ptr(x_tmp_0));
     code.sub(x_tmp_sp, x_tmp_sp, 8);
     code.str(reg_tmp, ptr(x_tmp_sp));
-    code.mov(WReg(IDX(reg_tmp)), 1);
+    code.mov(reg_tmp, 1);
 
 #if 0
     if (mayiuse(avx512_mic)) {
@@ -80,7 +80,7 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
 
     code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_2);
     code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
-    code.adds(reg_tmp, reg_tmp, 1);
+    code.add(reg_tmp, reg_tmp, 1);
     code.cmp(reg_tmp, reg_nthr);
     code.ldr(reg_tmp, ptr(x_tmp_sp));
     code.add(x_tmp_sp, x_tmp_sp, 8);

@@ -442,6 +442,7 @@ struct jit_bnorm_t : public jit_generator {
 
         not_(p_tmp0.b, p_512 / T_z, PRegB(IDX(kstore_mask)));
         mov(ZRegD(IDX(vdiff_dst)), ZRegD(IDX(vdiff_dst)));
+	mov(ZRegS(IDX(vdiff_dst)), p_tmp0 / T_m, 0);
 
         if (is_nspc_)
             lsl(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
