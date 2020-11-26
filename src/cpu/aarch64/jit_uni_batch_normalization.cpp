@@ -135,7 +135,7 @@ struct jit_bnorm_t : public jit_generator {
     PReg p_512 = p7;
     PReg p_lsb_256 = p6;
     PReg p_lsb_128 = p5;
-    PReg p_tmp0 = p8;
+    PReg p_tmp0 = p4;
 
     //    XReg x_translator_stack {22};
     XReg x_tmp_0 {23};
@@ -391,7 +391,7 @@ struct jit_bnorm_t : public jit_generator {
         else
             lsr(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), bit_shift() % 64);
 
-        fcmlt(PRegS(IDX(kstore_mask)), P_ALL_ONE / T_z, ZRegS(IDX(vzero)),
+        fcmlt(PRegS(IDX(kstore_mask)), p_512 / T_z, ZRegS(IDX(vzero)),
                 ZRegS(IDX(vdst)));
 
         PRegB p_mask(IDX(kstore_mask));
@@ -440,7 +440,7 @@ struct jit_bnorm_t : public jit_generator {
         zip1(p_mask.b, p_mask.b, p_mask.b);
         add(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
 
-        not_(p_tmp0.b, P_ALL_ONE / T_z, PRegB(IDX(kstore_mask)));
+        not_(p_tmp0.b, p_512 / T_z, PRegB(IDX(kstore_mask)));
         mov(ZRegD(IDX(vdiff_dst)), ZRegD(IDX(vdiff_dst)));
         mov(ZRegS(IDX(vdiff_dst)), p_tmp0 / T_m, 0);
 
@@ -514,6 +514,7 @@ struct jit_bnorm_t : public jit_generator {
         }
         L(l_no_mask);
         ldr(QReg(IDX(v)), ptr(x));
+	mov(ZRegS(IDX(v)), P_MSB_384 / T_m, 0);
         L(l_ret);
     }
 
@@ -559,6 +560,7 @@ struct jit_bnorm_t : public jit_generator {
             const PReg &pred) {
         (void)pred;
         fdiv(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vdivps_aarch64(const ZReg &dst, const ZReg &src, const ZReg &src2,
@@ -583,6 +585,7 @@ struct jit_bnorm_t : public jit_generator {
             const VReg &dst, const VReg &src, const PReg &pred) {
         (void)pred;
         fsqrt(VReg4S(IDX(dst)), VReg4S(IDX(src)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vsqrtps_aarch64(
@@ -593,6 +596,7 @@ struct jit_bnorm_t : public jit_generator {
     void uni_vaddps_unpredicate_aarch64(
             const VReg &dst, const VReg &src, const VReg &src2) {
         fadd(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vaddps_unpredicate_aarch64(
@@ -603,6 +607,7 @@ struct jit_bnorm_t : public jit_generator {
     void uni_vfnmadd231ps_aarch64(const VReg &dst, const VReg &src,
             const VReg &src2, const PReg &pred) {
         fmls(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vfnmadd231ps_aarch64(const ZReg &dst, const ZReg &src,
@@ -613,6 +618,7 @@ struct jit_bnorm_t : public jit_generator {
     void uni_vfmadd231ps_aarch64(
             const VReg &dst, const VReg &src, const VReg &src2, PReg &pred) {
         fmla(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vfmadd231ps_aarch64(
@@ -622,7 +628,8 @@ struct jit_bnorm_t : public jit_generator {
 
     void uni_vfmadd213ps_aarch64(
             const VReg &dst, const VReg &src, const VReg &src2, PReg &pred) {
-        fmad(ZRegS(IDX(dst)), p_lsb_128 / T_m, ZRegS(IDX(src)), ZRegS(IDX(src2)));
+        fmad(ZRegS(IDX(dst)), p_512 / T_m, ZRegS(IDX(src)), ZRegS(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vfmadd213ps_aarch64(
@@ -650,6 +657,7 @@ struct jit_bnorm_t : public jit_generator {
 
     void uni_vmovups_aarch64(const VReg &v, const XReg &x) {
         ldr(QReg(IDX(v)), ptr(x));
+	mov(ZRegS(IDX(v)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vmovups_aarch64(const ZReg &z, const XReg &x) {
@@ -666,6 +674,7 @@ struct jit_bnorm_t : public jit_generator {
             const VReg &dst, const VReg &src, const VReg &src2) {
         fmaxnm(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
         fmax(VReg4S(IDX(dst)), VReg4S(IDX(dst)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vmaxps_aarch64(
@@ -678,6 +687,7 @@ struct jit_bnorm_t : public jit_generator {
 
     void uni_vpxor_aarch64(const VReg &dst, const VReg &src, const VReg &src2) {
         eor(VReg16B(IDX(dst)), VReg16B(IDX(src)), VReg16B(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vpxor_aarch64(const ZReg &dst, const ZReg &src, const ZReg &src2) {
@@ -686,6 +696,7 @@ struct jit_bnorm_t : public jit_generator {
 
     void uni_vsubps_aarch64(const VReg &dst, const VReg &src, const VReg &src2) {
         fsub(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vsubps_aarch64(const ZReg &dst, const ZReg &src, const ZReg &src2) {
@@ -694,6 +705,7 @@ struct jit_bnorm_t : public jit_generator {
 
     void uni_vmulps_aarch64(const VReg &dst, const VReg &src, const VReg &src2) {
         fmul(VReg4S(IDX(dst)), VReg4S(IDX(src)), VReg4S(IDX(src2)));
+	mov(ZRegS(IDX(dst)), P_MSB_384 / T_m, 0);
     }
 
     void uni_vmulps_aarch64(const ZReg &dst, const ZReg &src, const ZReg &src2) {
@@ -1254,7 +1266,7 @@ struct jit_bnorm_t : public jit_generator {
                 if (isa == sve_512)
                     add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
                             x_tmp_0);
-                else if (isa == asimd)
+                else
                     add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
                             x_tmp_0);
 
