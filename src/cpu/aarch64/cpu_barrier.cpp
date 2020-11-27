@@ -49,13 +49,6 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     const XReg sp = code.sp;
 
     Label barrier_exit_label, barrier_exit_restore_label, spin_label;
-    Label debug0, debug1;
-
-#if 0
-    code.CodeGenerator::L(debug0);
-    code.nop();
-    code.b(debug0);
-#endif
 
     code.mov(x_tmp_sp, sp);
     code.cmp(reg_nthr, 1);
@@ -70,13 +63,6 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.sub(x_tmp_sp, x_tmp_sp, 8);
     code.str(reg_tmp, ptr(x_tmp_sp));
     code.mov(reg_tmp, 1);
-
-#if 0
-    if (mayiuse(avx512_mic)) {
-        code.prefetchwt1(code.ptr[reg_ctx + BAR_CTR_OFF]);
-        code.prefetchwt1(code.ptr[reg_ctx + BAR_CTR_OFF]);
-    }
-#endif // #if 0
 
     code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_2);
     code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
@@ -110,15 +96,9 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.add(x_tmp_sp, x_tmp_sp, 8);
 
     code.CodeGenerator::L(barrier_exit_label);
-    //    code.mov(sp, x_tmp_sp);
 #undef BAR_CTR_OFF
 #undef BAR_SENSE_OFF
 
-#if 0
-    code.CodeGenerator::L(debug1);
-    code.nop();
-    code.b(debug1);
-#endif
 }
 
 /** jit barrier generator */

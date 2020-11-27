@@ -138,23 +138,27 @@ public:
                     post_ptr(x9, xreg_len * 2));
         }
 
-        ptrue(P_ALL_ONE.b);
-        ptrue(P_MSB_384.b, Xbyak_aarch64::VL16);
-        ptrue(P_MSB_256.b, Xbyak_aarch64::VL32);
-        not_(P_MSB_384.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_384.b);
-        not_(P_MSB_256.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_256.b);
-        pfalse(P_ALL_ZERO.b);
+        if (mayiuse(sve_512)) {
+            ptrue(P_ALL_ONE.b);
+            ptrue(P_MSB_384.b, Xbyak_aarch64::VL16);
+            ptrue(P_MSB_256.b, Xbyak_aarch64::VL32);
+            not_(P_MSB_384.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_384.b);
+            not_(P_MSB_256.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_256.b);
+            pfalse(P_ALL_ZERO.b);
+        }
         mov(X_TRANSLATOR_STACK, sp);
     }
 
     void postamble() {
         mov(x9, sp);
-        eor(P_ALL_ONE.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_ALL_ONE.b,
-                P_ALL_ONE.b);
-        eor(P_MSB_384.b, P_MSB_384 / Xbyak_aarch64::T_z, P_MSB_384.b,
-                P_MSB_384.b);
-        eor(P_MSB_256.b, P_MSB_256 / Xbyak_aarch64::T_z, P_MSB_256.b,
-                P_MSB_256.b);
+        if (mayiuse(sve_512)) {
+            eor(P_ALL_ONE.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_ALL_ONE.b,
+                    P_ALL_ONE.b);
+            eor(P_MSB_384.b, P_MSB_384 / Xbyak_aarch64::T_z, P_MSB_384.b,
+                    P_MSB_384.b);
+            eor(P_MSB_256.b, P_MSB_256 / Xbyak_aarch64::T_z, P_MSB_256.b,
+                    P_MSB_256.b);
+        }
 
         if (vreg_to_preserve) {
             ld4((v8.d - v11.d)[0], post_ptr(x9, vreg_len_preserve * 4));
@@ -181,6 +185,16 @@ public:
     void L_aligned(Xbyak_aarch64::Label &label, int alignment = 16) {
         align(alignment);
         L(label);
+    }
+
+    void uni_fsub(const Xbyak_aarch64::VReg4S &v1,
+            const Xbyak_aarch64::VReg4S &v2, const Xbyak_aarch64::VReg4S &v3) {
+        fsub(v1, v2, v3);
+    }
+
+    void uni_fsub(const Xbyak_aarch64::ZRegS &z1,
+            const Xbyak_aarch64::ZRegS &z2, const Xbyak_aarch64::ZRegS &z3) {
+        fsub(z1, z2, z3);
     }
 
     /*
