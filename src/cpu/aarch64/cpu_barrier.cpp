@@ -98,7 +98,6 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
     code.CodeGenerator::L(barrier_exit_label);
 #undef BAR_CTR_OFF
 #undef BAR_SENSE_OFF
-
 }
 
 /** jit barrier generator */
