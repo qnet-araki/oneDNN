@@ -32,8 +32,8 @@
 
 #include "cpu/aarch64/jit_uni_batch_normalization.hpp"
 
-#define CG CodeGeneratorAArch64
 #define IDX(a) static_cast<uint32_t>(a.getIdx())
+#define DUMMY_IDX 30
 
 namespace dnnl {
 namespace impl {
@@ -73,14 +73,8 @@ struct jit_bnorm_t : public jit_generator {
 
     /* cpu specific part */
     using TReg = typename utils::conditional<isa == asimd, VReg, ZReg>::type;
-    using TRegB =
-            typename utils::conditional<isa == asimd, VReg16B, ZRegB>::type;
-    using TRegH =
-            typename utils::conditional<isa == asimd, VReg8H, ZRegH>::type;
     using TRegS =
             typename utils::conditional<isa == asimd, VReg4S, ZRegS>::type;
-    using TRegD =
-            typename utils::conditional<isa == asimd, VReg2D, ZRegD>::type;
 
     const int vlen = isa == asimd ? 32 : cpu_isa_traits<isa>::vlen;
     int vlen_spat_data_; // set by ctor depending on data type (BF16 or FP32);
@@ -90,23 +84,16 @@ struct jit_bnorm_t : public jit_generator {
     bool is_nspc_;
     bool is_bf16_;
 
-    XReg rax = x0;
-    XReg rcx = x1;
-    XReg rdx = x2;
-    XReg rbx = x3;
     XReg rsp = sp;
-    XReg rbp = x5;
-    XReg rsi = x6;
-    XReg rdi = x7;
 
     XReg reg_param = abi_param1;
 
-    XReg reg_scale_shift = rbx;
+    XReg reg_scale_shift = x3;
     XReg reg_rbuf1 = x1;
-    XReg reg_rbuf2 = rdx;
+    XReg reg_rbuf2 = x2;
     XReg reg_coff_max_fwd_copy = reg_rbuf2;
 
-    XReg reg_mean = rbp;
+    XReg reg_mean = x5;
     XReg reg_var = reg_param;
     XReg reg_diff_scale_shift = x7;
     XReg reg_coff_max_bwd_copy = reg_diff_scale_shift;
@@ -123,7 +110,7 @@ struct jit_bnorm_t : public jit_generator {
 
     XReg reg_src = x15;
     XReg reg_diff_src = reg_rbuf1;
-    XReg reg_dst = rsi;
+    XReg reg_dst = x6;
     XReg reg_diff_dst = reg_dst;
 
     XReg reg_tmp_off = reg_roff;
@@ -136,7 +123,6 @@ struct jit_bnorm_t : public jit_generator {
     // Relu section
     bool with_relu, with_relu_inf_only;
     XReg reg_ws = reg_roff;
-    Label l_relu_mask_avx2;
     PReg kstore_mask = PReg(1);
 
     // channel tail processing
@@ -144,58 +130,29 @@ struct jit_bnorm_t : public jit_generator {
 
     /* Caution: Chose predicate registers not used by x64's implementation. */
     PReg p_512 = p7;
-    PReg p_lsb_256 = p6;
-    PReg p_lsb_128 = p5;
     PReg p_tmp0 = p4;
-
-    //    XReg x_translator_stack {22};
-    XReg x_tmp_0 {23};
-    XReg x_tmp_1 {24};
-    XReg x_tmp_2 {25};
-
-    WReg w_tmp_0 {23};
-    WReg w_tmp_1 {24};
-    WReg w_tmp_2 {25};
-    WReg w_tmp_3 {26};
-
-    const std::vector<XReg> x_tmp_vec = {x_tmp_0, x_tmp_1, x_tmp_2};
-    constexpr static int x_tmp_vec_size = 3;
-
-    const std::vector<WReg> w_tmp_vec = {w_tmp_0, w_tmp_1, w_tmp_2, w_tmp_3};
-    constexpr static int w_tmp_vec_size = 4;
-
-#if 0
-    // FP32->BF16 emulation
-    bf16_emulation_t *bf16_emu_ {nullptr};
-    XReg reg_bf16_tmp = reg_tmp;
-    ZReg bf16_emu_reserved_1 = z16;
-    ZReg bf16_emu_reserved_2 = z17;
-    ZReg bf16_emu_reserved_3 = z18;
-    ZReg bf16_emu_reserved_4 = z19;
-#endif // #if 0
 
     size_t unroll_blocks;
     size_t unroll_regs;
 
     TReg vzero = TReg(
             0); // Index 0 is temporal value. is_fwd() ? vdiff_beta : vbeta
-    TReg vbuf = TReg(isa == sve_512 ? 20 : 5);
-    TReg vdiff_beta = TReg(isa == sve_512 ? 21 : 6);
-    TReg vdiff_gamma = TReg(isa == sve_512 ? 22 : 7);
-    TReg vsqrtvar = TReg(isa == sve_512 ? 23 : 8);
-    TReg vone = TReg(isa == sve_512 ? 24 : 9);
-    TReg vmean = TReg(isa == sve_512 ? 25 : 10);
-    TReg vgamma = TReg(isa == sve_512 ? 26 : 11);
-    TReg vbeta = TReg(isa == sve_512 ? 27 : 12);
-    TReg veps = TReg(isa == sve_512 ? 28 : 13);
-    TReg vchan_size = TReg(isa == sve_512 ? 29 : 14);
-    TReg z_tmp0 = TReg(31);
-    TReg z_tmp1 = vbuf;
+    TReg vbuf = TReg(20);
+    TReg vdiff_beta = TReg(21);
+    TReg vdiff_gamma = TReg(22);
+    TReg vsqrtvar = TReg(23);
+    TReg vone = TReg(24);
+    TReg vmean = TReg(25);
+    TReg vgamma = TReg(26);
+    TReg vbeta = TReg(27);
+    TReg veps = TReg(28);
+    TReg vchan_size = TReg(29);
+    TReg t_tmp0 = TReg(31);
+    TReg t_tmp1 = vbuf;
 
-    const std::vector<uint32_t> tmp_vec_idx = {31, isa == sve_512 ? 20 : 5};
+    const std::vector<uint32_t> tmp_vec_idx = {31, 20}; 
 
-    const std::vector<TReg> z_tmp_vec = {z_tmp0, z_tmp1};
-    constexpr static int z_tmp_vec_size = 2;
+    const std::vector<TReg> t_tmp_vec = {t_tmp0, t_tmp1};
 
     size_t t0_pf_offt;
     size_t t1_pf_offt;
@@ -250,17 +207,17 @@ struct jit_bnorm_t : public jit_generator {
     (static_cast<int32_t>(PARAM_OFF(x)) - static_cast<int32_t>(PARAM_OFF(y)))
 #define LDR_PARAM(r, x, y) \
     assert(-256 <= PARAM_OFF_DIFF(x, y) && PARAM_OFF_DIFF(x, y) <= 255); \
-    ldr(XReg(IDX(r)), pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(x, y)))
+    ldr(r, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(x, y)))
 #define LDR_PARAM_TMP(x, y) \
     assert(-256 <= PARAM_OFF_DIFF(x, y) && PARAM_OFF_DIFF(x, y) <= 255); \
-    ldr(x_tmp_0, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(x, y)));
+    ldr(X_TMP_0, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(x, y)));
 #define STR_PARAM_TMP(x, y) \
     assert(-256 <= static_cast<int32_t>(x) - static_cast<int32_t>(y) \
             && static_cast<int32_t>(x) - static_cast<int32_t>(y) <= 256); \
-    str(x_tmp_0, pre_ptr(x_tmp_sp, x - y));
+    str(X_TMP_0, pre_ptr(x_tmp_sp, x - y));
 
-        mov(X_DEFAULT_ADDR, XReg(IDX(reg_param)));
-        ldr(XReg(IDX(reg_rbuf1)), pre_ptr(X_DEFAULT_ADDR, PARAM_OFF(rbuf1)));
+        mov(X_DEFAULT_ADDR, reg_param);
+        ldr(reg_rbuf1, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF(rbuf1)));
         if (bdesc_->is_bwd()) {
             LDR_PARAM(reg_rbuf2, rbuf2, rbuf1);
             LDR_PARAM(reg_coff_max, coff_max, rbuf2);
@@ -269,31 +226,25 @@ struct jit_bnorm_t : public jit_generator {
         }
         LDR_PARAM(reg_soff_max, soff_max, coff_max);
         LDR_PARAM(reg_mb_stride_Bc, mb_stride_Bc, soff_max);
-        lsl(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 2);
+        lsl(reg_coff_max, reg_coff_max, 2);
 
         LDR_PARAM(reg_mean, mean, mb_stride_Bc);
         LDR_PARAM(reg_scale_shift, scale_shift, mean);
 
-        ldr(w_tmp_1,
+        ldr(W_TMP_1,
                 pre_ptr(X_DEFAULT_ADDR,
                         PARAM_OFF_DIFF(chan_size, scale_shift)));
-        ldr(w_tmp_2, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(one, chan_size)));
-        ldr(w_tmp_3, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(eps, one)));
+        ldr(W_TMP_2, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(one, chan_size)));
+        ldr(W_TMP_3, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF_DIFF(eps, one)));
 
-        if (isa == sve_512) {
-            dup(ZRegS(IDX(vchan_size)), w_tmp_1);
-            dup(ZRegS(IDX(vone)), w_tmp_2);
-            dup(ZRegS(IDX(veps)), w_tmp_3);
-        } else {
-            dup(VReg4S(IDX(vchan_size)), w_tmp_1);
-            dup(VReg4S(IDX(vone)), w_tmp_2);
-            dup(VReg4S(IDX(veps)), w_tmp_3);
-        }
+        dup(vchan_size.s, W_TMP_1);
+        dup(vone.s, W_TMP_2);
+        dup(veps.s, W_TMP_3);
 
         XReg x_tmp_sp = X_TMP_4;
-        mov(x_tmp_sp, XReg(IDX(rsp)));
+        mov(x_tmp_sp, rsp);
         LDR_PARAM_TMP(N_nthr, eps);
-        str(x_tmp_0, pre_ptr(x_tmp_sp, stack_off_N_nthr));
+        str(X_TMP_0, pre_ptr(x_tmp_sp, stack_off_N_nthr));
         LDR_PARAM_TMP(N_ithr, N_nthr);
         STR_PARAM_TMP(stack_off_N_ithr, stack_off_N_nthr);
 
@@ -319,7 +270,7 @@ struct jit_bnorm_t : public jit_generator {
         int32_t tmpStack = stack_off_barrier;
 
         if (is_spatial_thr_) {
-            ldr(x_tmp_0,
+            ldr(X_TMP_0,
                     pre_ptr(X_DEFAULT_ADDR,
                             PARAM_OFF(spat_size_loc) - tmpSize));
             STR_PARAM_TMP(stack_off_spat_size_loc, tmpStack);
@@ -331,22 +282,22 @@ struct jit_bnorm_t : public jit_generator {
             tmpStack = stack_off_s_tail;
         }
         if (is_c_padded()) {
-            ldr(x_tmp_0,
+            ldr(X_TMP_0,
                     pre_ptr(X_DEFAULT_ADDR, PARAM_OFF(is_cblk_tail) - tmpSize));
             STR_PARAM_TMP(stack_off_is_cblk_tail, tmpStack);
             tmpSize = PARAM_OFF(is_cblk_tail);
             tmpStack = stack_off_is_cblk_tail;
         }
         if (bdesc_->is_fwd()) {
-            ldr(x_tmp_0, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF(var) - tmpSize));
-            mov(XReg(IDX(reg_var)), x_tmp_0);
+            ldr(X_TMP_0, pre_ptr(X_DEFAULT_ADDR, PARAM_OFF(var) - tmpSize));
+            mov(reg_var, X_TMP_0);
         } else {
-            ldr(x_tmp_0,
+            ldr(X_TMP_0,
                     pre_ptr(X_DEFAULT_ADDR,
                             PARAM_OFF(diff_scale_shift) - tmpSize));
             STR_PARAM_TMP(stack_off_diff_scale_shift, tmpStack);
             LDR_PARAM_TMP(var, diff_scale_shift);
-            mov(XReg(IDX(reg_var)), x_tmp_0);
+            mov(reg_var, X_TMP_0);
         }
 #undef LDR_PARAM
 #undef LDR_PARAM_TMP
@@ -354,7 +305,7 @@ struct jit_bnorm_t : public jit_generator {
 #undef PARAM_OFF
     }
 
-    void prepare_tail_mask_avx512_common() {
+    void prepare_tail_mask_sve_512() {
         if (!is_c_padded()) return;
 
         const int tail = bdesc_->C() % (int)(vlen / sizeof(float));
@@ -370,8 +321,8 @@ struct jit_bnorm_t : public jit_generator {
             case 2: ptrue(PRegS(idx), VL2); break;
             case 1: ptrue(PRegS(idx), VL1); break;
             default:
-                index(ZRegS(IDX(z_tmp0)), 1, 1);
-                cmple(PRegS(idx), p_512 / T_z, ZRegS(IDX(z_tmp0)), tail);
+                index(ZRegS(IDX(t_tmp0)), 1, 1);
+                cmple(PRegS(idx), p_512 / T_z, ZRegS(IDX(t_tmp0)), tail);
                 break;
         }
     }
@@ -385,61 +336,61 @@ struct jit_bnorm_t : public jit_generator {
 
         vzero = bdesc_->is_fwd() ? vdiff_beta : vbeta;
         if (with_relu) {
-            uni_eor(TReg(IDX(vzero)), TReg(IDX(vzero)), TReg(IDX(vzero)));
+            uni_eor(vzero, vzero, vzero);
         }
     }
 
     void fwd_process_relu_avx512_common(ZReg vdst, int offt = 0) {
         if (is_nspc_)
-            lsr(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
+            lsr(reg_soff_nspc, reg_soff_nspc,
                     bit_shift() % 64);
         else
-            lsr(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), bit_shift() % 64);
+            lsr(reg_soff, reg_soff, bit_shift() % 64);
 
         fcmlt(PRegS(IDX(kstore_mask)), p_512 / T_z, ZRegS(IDX(vzero)),
                 ZRegS(IDX(vdst)));
 
         PRegB p_mask(IDX(kstore_mask));
         if (is_nspc_)
-            add(x_tmp_1, XReg(IDX(reg_ws)), XReg(IDX(reg_soff_nspc)));
+            add(X_TMP_1, reg_ws, reg_soff_nspc);
         else
-            add(x_tmp_1, XReg(IDX(reg_ws)), XReg(IDX(reg_soff)));
+            add(X_TMP_1, reg_ws, reg_soff);
         if (offt / (1 << bit_shift()))
-            add_imm(x_tmp_1, x_tmp_1, offt / (1 << bit_shift()), x_tmp_0);
+            add_imm(X_TMP_1, X_TMP_1, offt / (1 << bit_shift()), X_TMP_0);
         uzp1(p_tmp0.b, p_mask, p_mask);
         uzp1(p_tmp0.b, p_tmp0.b, p_tmp0.b);
         sub(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
         str(p_tmp0, ptr(X_TRANSLATOR_STACK));
-        ldurh(w_tmp_0, ptr(X_TRANSLATOR_STACK));
+        ldurh(W_TMP_0, ptr(X_TRANSLATOR_STACK));
         add(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
-        strh(w_tmp_0, ptr(x_tmp_1));
+        strh(W_TMP_0, ptr(X_TMP_1));
 
-        sel(ZRegS(IDX(vdst)), PReg(IDX(kstore_mask)) / T_m, ZRegS(IDX(vdst)),
+        sel(ZRegS(IDX(vdst)), kstore_mask / T_m, ZRegS(IDX(vdst)),
                 ZRegS(IDX(vzero)));
 
         if (is_nspc_)
-            lsl(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
+            lsl(reg_soff_nspc, reg_soff_nspc,
                     bit_shift() % 64);
         else
-            lsl(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), bit_shift() % 64);
+            lsl(reg_soff, reg_soff, bit_shift() % 64);
     }
 
     void bwd_process_relu_avx512_common(ZReg vdiff_dst, int offt = 0) {
         PReg p_mask(IDX(kstore_mask));
         if (is_nspc_) {
-            lsr(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
+            lsr(reg_soff_nspc, reg_soff_nspc,
                     bit_shift() % 64);
-            add(x_tmp_1, XReg(IDX(reg_ws)), XReg(IDX(reg_soff_nspc)));
+            add(X_TMP_1, reg_ws, reg_soff_nspc);
         } else {
-            lsr(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), bit_shift() % 64);
-            add(x_tmp_1, XReg(IDX(reg_ws)), XReg(IDX(reg_soff)));
+            lsr(reg_soff, reg_soff, bit_shift() % 64);
+            add(X_TMP_1, reg_ws, reg_soff);
         }
         if (offt / (1 << bit_shift()))
-            add_imm(x_tmp_1, x_tmp_1, offt / (1 << bit_shift()), x_tmp_0);
+            add_imm(X_TMP_1, X_TMP_1, offt / (1 << bit_shift()), X_TMP_0);
 
         sub(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
-        ldurh(w_tmp_0, ptr(x_tmp_1));
-        strh(w_tmp_0, ptr(X_TRANSLATOR_STACK));
+        ldurh(W_TMP_0, ptr(X_TMP_1));
+        strh(W_TMP_0, ptr(X_TRANSLATOR_STACK));
         ldr(p_mask, ptr(X_TRANSLATOR_STACK));
         zip1(p_mask.b, p_mask.b, p_mask.b);
         zip1(p_mask.b, p_mask.b, p_mask.b);
@@ -450,10 +401,10 @@ struct jit_bnorm_t : public jit_generator {
         mov(ZRegS(IDX(vdiff_dst)), p_tmp0 / T_m, 0);
 
         if (is_nspc_)
-            lsl(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
+            lsl(reg_soff_nspc, reg_soff_nspc,
                     bit_shift() % 64);
         else
-            lsl(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), bit_shift() % 64);
+            lsl(reg_soff, reg_soff, bit_shift() % 64);
     }
 
     void uni_load_spat_data(const VReg &v, const XReg &x) {
@@ -461,25 +412,7 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void uni_load_spat_data(const ZReg &z, const XReg &x) {
-        if (is_bf16_) {
-#if 0
-                constexpr bool isAvx2 = isa == avx2;
-                const typename std::conditional<isAvx2, Xmm, Ymm>::type
-                        dst_reg {src.getIdx()};
-                const typename std::conditional<isAvx2, Ymm, Zmm>::type
-                        src_reg {src.getIdx()};
-
-                // convert f32 output to bf16
-                if (mayiuse(avx512_core_bf16))
-                    vcvtneps2bf16(dst_reg, src_reg);
-                else
-                    bf16_emu_->vcvtneps2bf16(dst_reg, src_reg);
-
-                vmovdqu16(dst.getAddress(), dst_reg);
-#endif // #if 0
-        } else {
-            ldr(z, ptr(x));
-        }
+        ldr(z, ptr(x));
     }
 
     void uni_store_spat_data(const XReg &x, const VReg &v) {
@@ -487,26 +420,18 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void uni_store_spat_data(const XReg &x, const ZReg &z) {
-        if (is_bf16_) {
-#if 0
-                // convert bf16 input to f32
-                vpmovzxwd(ZReg(dst.getIdx()), src.getAddress());
-                vpslld(ZReg(dst.getIdx()), ZReg(dst.getIdx()), 0x10);
-#endif // #if 0
-        } else {
-            str(z, ptr(x));
-        }
+        str(z, ptr(x));
     }
 
     void jump_check(const Label &l_no_mask) {
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_is_cblk_tail, x_tmp_1);
-        ldr(XReg(IDX(reg_tmp)), ptr(x_tmp_0));
-        cmp(XReg(IDX(reg_tmp)), 0);
+        add_imm(X_TMP_0, rsp, (int)stack_off_is_cblk_tail, X_TMP_1);
+        ldr(reg_tmp, ptr(X_TMP_0));
+        cmp(reg_tmp, 0);
         b(EQ, l_no_mask);
 
-        add_imm(x_tmp_0, XReg(IDX(reg_coff)), vlen, x_tmp_1);
-        mov(XReg(IDX(reg_tmp)), x_tmp_0);
-        cmp(XReg(IDX(reg_tmp)), XReg(IDX(reg_coff_max)));
+        add_imm(X_TMP_0, reg_coff, vlen, X_TMP_1);
+        mov(reg_tmp, X_TMP_0);
+        cmp(reg_tmp, reg_coff_max);
         b(LT, l_no_mask);
     }
 
@@ -519,10 +444,7 @@ struct jit_bnorm_t : public jit_generator {
             b(l_ret);
         }
         L(l_no_mask);
-        if (isa == sve_512)
-            ldr(ZReg(IDX(t)), ptr(x));
-        else
-            ldr(QReg(IDX(t)), ptr(x));
+	uni_ldr(t, x);
         L(l_ret);
     }
 
@@ -535,10 +457,7 @@ struct jit_bnorm_t : public jit_generator {
             b(l_ret);
         }
         L(l_no_mask);
-        if (isa == sve_512)
-            str(ZReg(IDX(t)), ptr(x));
-        else
-            str(QReg(IDX(t)), ptr(x));
+	uni_str(t, x);
         L(l_ret);
     }
 
@@ -552,13 +471,13 @@ struct jit_bnorm_t : public jit_generator {
         uint32_t src2Idx = IDX(src2);
 
         if (dstIdx == src2Idx) {
-            mov(z_tmp0.s, p_512 / T_m, src2);
-            mov(dst, p_512 / T_m, src);
-            fdiv(dst, p_512 / T_m, z_tmp0.s);
+            mov(t_tmp0.s, P_ALL_ONE / T_m, src2);
+            mov(dst, P_ALL_ONE / T_m, src);
+            fdiv(dst, p_512 / T_m, t_tmp0.s);
         } else if (dstIdx == srcIdx) {
             fdiv(dst, p_512 / T_m, src2);
         } else {
-            mov(dst, p_512 / T_m, src);
+            mov(dst, P_ALL_ONE / T_m, src);
             fdiv(dst, p_512 / T_m, src2);
         }
     }
@@ -578,57 +497,67 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void uni_fmla(
-            const VReg4S &dst, const VReg4S &src, const VReg4S &src2, PReg &p) {
-        (void)p;
+            const VReg4S &dst, const VReg4S &src, const VReg4S &src2) {
         fmla(dst, src, src2);
     }
 
     void uni_fmla(
-            const ZRegS &dst, const ZRegS &src, const ZRegS &src2, PReg &p) {
-        fmla(dst, p / T_m, src, src2);
+            const ZRegS &dst, const ZRegS &src, const ZRegS &src2) {
+        fmla(dst, p_512 / T_m, src, src2);
     }
 
     void uni_fmad(const ZRegS &dst, const ZRegS &src, const ZRegS &src2,
-            const PReg &p, const ZRegS &buf) {
+            const ZRegS &buf) {
         (void)buf;
-        fmad(dst, p / T_m, src, src2);
+        fmad(dst, p_512 / T_m, src, src2);
     }
 
     void uni_fmad(const VReg4S &dst, const VReg4S &src, const VReg4S &src2,
-            const PReg &p, const VReg4S &buf) {
-        (void)p;
-        if (mayiuse(sve_512)) {
-            uni_fmad(ZRegS(dst.getIdx()), ZRegS(src.getIdx()),
-                    ZRegS(src2.getIdx()), p, ZRegS(buf.getIdx()));
-        } else {
-            fmul(buf, dst, src);
-            fadd(dst, buf, src2);
-        }
-    }
-
-    void uni_vmovntps_aarch64(
-            const XReg &base, const XReg &off, const int disp, const VReg &v) {
-        add(X_DEFAULT_ADDR, XReg(IDX(base)), XReg(IDX(off)));
-        if (disp != 0) add_imm(X_DEFAULT_ADDR, X_DEFAULT_ADDR, disp, x_tmp_0);
-
-        str(QReg(IDX(v)), ptr(X_DEFAULT_ADDR));
-    }
-
-    void uni_vmovntps_aarch64(
-            const XReg &base, const XReg &off, const int disp, const ZReg &z) {
-        add(X_DEFAULT_ADDR, XReg(IDX(base)), XReg(IDX(off)));
-        if (disp != 0) add_imm(X_DEFAULT_ADDR, X_DEFAULT_ADDR, disp, x_tmp_0);
-
-        stnt1w(ZRegS(IDX(z)), p_512, ptr(X_DEFAULT_ADDR));
+            const VReg4S &buf) {
+        fmul(buf, dst, src);
+        fadd(dst, buf, src2);
     }
 
     void uni_ldr(const VReg &v, const XReg &x) { ldr(QReg(IDX(v)), ptr(x)); }
 
-    void uni_ldr(const ZReg &z, const XReg &x) { ldr(ZReg(IDX(z)), ptr(x)); }
+    void uni_ldr(const ZReg &z, const XReg &x) { ldr(z, ptr(x)); }
 
-    void uni_str(const XReg &x, const VReg &v) { str(QReg(IDX(v)), ptr(x)); }
+    void uni_str(const VReg &v, const XReg &base,
+            const XReg &off = XReg(DUMMY_IDX), const int disp = 0) {
+        str(QReg(IDX(v)), ptr(xreg_addr(base, off, disp)));
+    }
 
-    void uni_str(const XReg &x, const ZReg &z) { str(z, ptr(x)); }
+    XReg xreg_addr(const XReg &base, const XReg &off = XReg(DUMMY_IDX),
+            const int disp = 0) {
+        XReg x_addr = base;
+
+        if (off.getIdx() >= SP_IDX && disp == 0) {
+            x_addr = base;
+        } else if (off.getIdx() < SP_IDX && disp == 0) {
+            add(X_DEFAULT_ADDR, base, off);
+            x_addr = X_DEFAULT_ADDR;
+        } else if (off.getIdx() >= SP_IDX && disp) {
+            add_imm(X_DEFAULT_ADDR, x_addr, disp, X_TMP_0);
+            x_addr = X_DEFAULT_ADDR;
+        } else {
+            add(X_DEFAULT_ADDR, base, off);
+            add_imm(X_DEFAULT_ADDR, X_DEFAULT_ADDR, disp, X_TMP_0);
+            x_addr = X_DEFAULT_ADDR;
+        }
+
+        return x_addr;
+    }
+
+    void uni_str(const ZReg &z, const XReg &base,
+            const XReg &off = XReg(DUMMY_IDX), const int disp = 0) {
+
+        str(z, ptr(xreg_addr(base, off, disp)));
+    }
+
+    void uni_stnt1w(const ZReg &z, const XReg &base,
+            const XReg &off = XReg(DUMMY_IDX), const int disp = 0) {
+        stnt1w(z.s, p_512, ptr(xreg_addr(base, off, disp)));
+    }
 
     void uni_fmax(const VReg4S &dst, const VReg4S &src, const VReg4S &src2) {
         fmaxnm(dst, src, src2);
@@ -636,64 +565,40 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void uni_fmax(const ZRegS &dst, const ZRegS &src, const ZRegS &src2) {
-        mov(z_tmp0.s, p_512 / T_m, src2);
-        fmaxnm(z_tmp0.s, p_512, src);
-        fmax(z_tmp0.s, p_512, src);
-        mov(dst, p_512 / T_m, z_tmp0.s);
-    }
-
-    void uni_eor(const VReg &dst, const VReg &src, const VReg &src2) {
-        eor(VReg16B(IDX(dst)), VReg16B(IDX(src)), VReg16B(IDX(src2)));
-    }
-
-    void uni_eor(const ZReg &dst, const ZReg &src, const ZReg &src2) {
-        eor(ZRegD(IDX(dst)), ZRegD(IDX(src)), ZRegD(IDX(src2)));
+        mov(t_tmp0.s, P_ALL_ONE / T_m, src2);
+        fmaxnm(t_tmp0.s, p_512, src);
+        fmax(t_tmp0.s, p_512, src);
+        mov(dst, P_ALL_ONE / T_m, t_tmp0.s);
     }
 
     void barrier() {
-        add_imm(x_tmp_1, XReg(IDX(rsp)), (int)stack_off_N_nthr, x_tmp_0);
-        ldr(XReg(IDX(reg_nnthr)), ptr(x_tmp_1));
-        add_imm(x_tmp_1, XReg(IDX(rsp)), (int)stack_off_barrier, x_tmp_0);
-        ldr(XReg(IDX(reg_bar)), ptr(x_tmp_1));
+        add_imm(X_TMP_1, rsp, (int)stack_off_N_nthr, X_TMP_0);
+        ldr(reg_nnthr, ptr(X_TMP_1));
+        add_imm(X_TMP_1, rsp, (int)stack_off_barrier, X_TMP_0);
+        ldr(reg_bar, ptr(X_TMP_1));
         simple_barrier::generate(*this, reg_bar, reg_nnthr);
     }
 
     XReg mean_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_mean)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
-        return x_tmp_2;
+        return xreg_addr(reg_mean, reg_coff, offt);
     }
 
-    XReg var_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_var)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
-        return x_tmp_2;
-    }
+    XReg var_ptr(size_t offt = 0) { return xreg_addr(reg_var, reg_coff, offt); }
 
     XReg diff_gamma_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
-        return x_tmp_2;
+        return xreg_addr(reg_diff_scale_shift, reg_coff, offt);
     }
 
     XReg diff_beta_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_diff_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt || chan_data_offt)
-            add_imm(x_tmp_2, x_tmp_2, offt + chan_data_offt, x_tmp_1);
-        return x_tmp_2;
+        return xreg_addr(reg_diff_scale_shift, reg_coff, offt + chan_data_offt);
     }
 
     XReg gamma_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt) add_imm(x_tmp_2, x_tmp_2, offt, x_tmp_1);
-        return x_tmp_2;
+        return xreg_addr(reg_scale_shift, reg_coff, offt);
     }
 
     XReg beta_ptr(size_t offt = 0) {
-        add(x_tmp_2, XReg(IDX(reg_scale_shift)), XReg(IDX(reg_coff)));
-        if (offt || chan_data_offt)
-            add_imm(x_tmp_2, x_tmp_2, offt + chan_data_offt, x_tmp_1);
-        return x_tmp_2;
+        return xreg_addr(reg_scale_shift, reg_coff, offt + chan_data_offt);
     }
 
     template <typename init_t, typename body_t, typename fini_t>
@@ -707,14 +612,14 @@ struct jit_bnorm_t : public jit_generator {
             init(i);
         if (loop_unroll) {
             if (is_spatial_thr_) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
-                        x_tmp_1);
-                ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
-                ldr(x_tmp_0, ptr(x_tmp_0));
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), x_tmp_0);
+                add_imm(X_TMP_0, rsp, (int)stack_off_spat_size_loc,
+                        X_TMP_1);
+                ldr(reg_ctr, ptr(X_TMP_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_s_s, X_TMP_1);
+                ldr(X_TMP_0, ptr(X_TMP_0));
+                add(reg_soff, reg_soff, X_TMP_0);
             } else {
-                mov_imm(XReg(IDX(reg_ctr)), (int)loop_unroll);
+                mov_imm(reg_ctr, (int)loop_unroll);
             }
             Label label;
             L(label);
@@ -723,17 +628,17 @@ struct jit_bnorm_t : public jit_generator {
                     size_t base_reg = i % regs;
                     body(base_reg, i);
                 }
-                add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        (int)factor * spat_step, x_tmp_0);
-                sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), (int)factor,
-                        x_tmp_0);
-                cbnz(XReg(IDX(reg_ctr)), label);
+                add_imm(reg_soff, reg_soff,
+                        (int)factor * spat_step, X_TMP_0);
+                sub_imm(reg_ctr, reg_ctr, (int)factor,
+                        X_TMP_0);
+                cbnz(reg_ctr, label);
             }
             if (is_spatial_thr_) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_tail,
-                        x_tmp_1);
-                ldr(x_tmp_0, ptr(x_tmp_0));
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), x_tmp_0);
+                add_imm(X_TMP_0, rsp, (int)stack_off_s_tail,
+                        X_TMP_1);
+                ldr(X_TMP_0, ptr(X_TMP_0));
+                add(reg_soff, reg_soff, X_TMP_0);
             }
         }
 
@@ -742,8 +647,8 @@ struct jit_bnorm_t : public jit_generator {
             body(base_reg, i);
         }
         if (loop_tail) {
-            add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                    (int)loop_tail * spat_step, x_tmp_0);
+            add_imm(reg_soff, reg_soff,
+                    (int)loop_tail * spat_step, X_TMP_0);
         }
 
         for (size_t i = 0; i < num_active_regs; i++)
@@ -754,8 +659,8 @@ struct jit_bnorm_t : public jit_generator {
         Label ch_label;
         L(ch_label);
         {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_ldr(TReg(0), x_tmp_0);
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_ldr(TReg(0), X_TMP_0);
             spat_loop(
                     spat_size, unroll_blocks, unroll_regs,
                     [=](size_t base_reg) {
@@ -766,36 +671,33 @@ struct jit_bnorm_t : public jit_generator {
                         TReg v0 = TReg(base_reg * 2 + 0);
                         TReg v1 = TReg(base_reg * 2 + 1);
                         size_t offt = i * vlen_spat_data_;
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(v1, x_tmp_0);
-                        fadd(TRegS(IDX(v0)), TRegS(IDX(v0)), TRegS(IDX(v1)));
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+                        add(X_TMP_0, reg_src, reg_soff);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_load_spat_data(v1, X_TMP_0);
+			fadd(v0.s, v0.s, v1.s);
+                        add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t0_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t0_pf_offt,
-                                    x_tmp_1);
-                        prfm(PLDL1KEEP, ptr(x_tmp_0));
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+                            add_imm(X_TMP_0, X_TMP_0, offt + t0_pf_offt,
+                                    X_TMP_1);
+                        prfm(PLDL1KEEP, ptr(X_TMP_0));
+                        add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t1_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t1_pf_offt,
-                                    x_tmp_1);
-                        prfm(PLDL2KEEP, ptr(x_tmp_0));
+                            add_imm(X_TMP_0, X_TMP_0, offt + t1_pf_offt,
+                                    X_TMP_1);
+                        prfm(PLDL2KEEP, ptr(X_TMP_0));
                     },
                     [=](size_t base_reg) {
                         TReg b = TReg(0);
                         TReg v = TReg(base_reg * 2);
                         if (base_reg)
-                            fadd(TRegS(IDX(b)), TRegS(IDX(b)), TRegS(IDX(v)));
+			    fadd(b.s, b.s, v.s);
                     });
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_str(TReg(0), X_TMP_0);
 
-            add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen, x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+            add_imm(reg_coff, reg_coff, vlen, X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
 
-            nop();
-            nop();
-            nop();
             b(LT, ch_label);
         }
     }
@@ -808,16 +710,16 @@ struct jit_bnorm_t : public jit_generator {
             for (int spat_pt = 0; spat_pt < num_spat_pts; ++spat_pt) {
                 int offt = 0;
                 for (int ch_idx = 0; ch_idx < num_ch_blks; ++ch_idx) {
-                    add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff_nspc)));
-                    if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                    uni_load_spat_data(TReg(sp_idx), x_tmp_0);
+                    add(X_TMP_0, reg_src, reg_soff_nspc);
+                    if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                    uni_load_spat_data(TReg(sp_idx), X_TMP_0);
 
                     fadd(TRegS(ch_idx), TRegS(ch_idx), TRegS(sp_idx++));
 
                     offt += vlen_spat_data_;
                 }
-                add_imm(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                        (int)spat_step, x_tmp_0);
+                add_imm(reg_soff_nspc, reg_soff_nspc,
+                        (int)spat_step, X_TMP_0);
             }
         };
 
@@ -828,42 +730,42 @@ struct jit_bnorm_t : public jit_generator {
                 for (int ch_idx = 0; ch_idx < num_ch_blks; ++ch_idx) {
                     uni_load_maybe_tail(vmean, mean_ptr(coff));
 
-                    add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff_nspc)));
-                    if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                    uni_load_spat_data(TReg(sp_idx), x_tmp_0);
+                    add(X_TMP_0, reg_src, reg_soff_nspc);
+                    if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                    uni_load_spat_data(TReg(sp_idx), X_TMP_0);
 
-                    uni_fsub(TRegS(30), TRegS(IDX(vmean)), TRegS(sp_idx++));
-                    uni_fmla(TRegS(ch_idx), TRegS(30), TRegS(30), p_512);
+                    uni_fsub(TRegS(30), vmean.s, TRegS(sp_idx++));
+                    uni_fmla(TRegS(ch_idx), TRegS(30), TRegS(30));
 
                     coff += vlen;
                     offt += vlen_spat_data_;
                 }
-                add_imm(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                        (int)spat_step, x_tmp_0);
+                add_imm(reg_soff_nspc, reg_soff_nspc,
+                        (int)spat_step, X_TMP_0);
             }
         };
 
         for (int idx = 0, offt = 0; idx < num_ch_blks; ++idx, offt += vlen) {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_ldr(TReg(idx), x_tmp_0);
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_ldr(TReg(idx), X_TMP_0);
         }
 
-        eor(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                XReg(IDX(reg_soff_nspc)));
+        eor(reg_soff_nspc, reg_soff_nspc,
+                reg_soff_nspc);
 
         if (is_spatial_thr_) {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
-                    x_tmp_1);
-            ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
-            ldr(x_tmp_0, ptr(x_tmp_0));
-            add(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)), x_tmp_0);
+            add_imm(X_TMP_0, rsp, (int)stack_off_spat_size_loc,
+                    X_TMP_1);
+            ldr(reg_ctr, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_s_s, X_TMP_1);
+            ldr(X_TMP_0, ptr(X_TMP_0));
+            add(reg_soff_nspc, reg_soff_nspc, X_TMP_0);
 
             // TODO: need a better heuristic for num_spat_pts
             num_spat_pts = 1;
         } else {
-            mov_imm(XReg(IDX(reg_ctr)), (int)spat_size);
+            mov_imm(reg_ctr, (int)spat_size);
             num_spat_pts = nstl::min((size_t)num_spat_pts, spat_size);
             // TODO: unroll by spatial
             if (spat_size % num_spat_pts != 0) num_spat_pts = 1;
@@ -874,15 +776,15 @@ struct jit_bnorm_t : public jit_generator {
         {
             compute_mean ? mean_compute(num_ch_blks, num_spat_pts)
                          : variance_compute(num_ch_blks, num_spat_pts);
-            sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), num_spat_pts,
-                    x_tmp_0);
-            cbnz(XReg(IDX(reg_ctr)), spatial);
+            sub_imm(reg_ctr, reg_ctr, num_spat_pts,
+                    X_TMP_0);
+            cbnz(reg_ctr, spatial);
         }
 
         for (int idx = 0, offt = 0; idx < num_ch_blks; ++idx, offt += vlen) {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_str(x_tmp_0, TReg(idx));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_str(TReg(idx), X_TMP_0);
         }
     }
 
@@ -891,19 +793,19 @@ struct jit_bnorm_t : public jit_generator {
             /* Overwritten during mean and variance computation */
             uni_eor(vzero, vzero, vzero);
 
-            eor(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                    XReg(IDX(reg_soff_nspc)));
+            eor(reg_soff_nspc, reg_soff_nspc,
+                    reg_soff_nspc);
 
             if (is_spatial_thr_) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
-                        x_tmp_1);
-                ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
-                ldr(x_tmp_0, ptr(x_tmp_0));
-                add(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                        x_tmp_0);
+                add_imm(X_TMP_0, rsp, (int)stack_off_spat_size_loc,
+                        X_TMP_1);
+                ldr(reg_ctr, ptr(X_TMP_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_s_s, X_TMP_1);
+                ldr(X_TMP_0, ptr(X_TMP_0));
+                add(reg_soff_nspc, reg_soff_nspc,
+                        X_TMP_0);
             } else {
-                mov_imm(XReg(IDX(reg_ctr)), spat_size);
+                mov_imm(reg_ctr, spat_size);
             }
 
             // TODO: spatial blocking
@@ -916,9 +818,8 @@ struct jit_bnorm_t : public jit_generator {
                 for (int idx = 0; idx < num_ch_blks; ++idx) {
                     uni_load_maybe_tail(vmean, mean_ptr(coff));
                     uni_load_maybe_tail(vsqrtvar, var_ptr(coff));
-                    fadd(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)),
-                            TRegS(IDX(veps)));
-                    uni_fsqrt(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)));
+		    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+		    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
 
                     if (bdesc_->use_scaleshift()) {
                         uni_load_maybe_tail(vgamma, gamma_ptr(coff));
@@ -928,57 +829,55 @@ struct jit_bnorm_t : public jit_generator {
                     TReg vscale = bdesc_->use_scaleshift() ? vgamma : vone;
                     TReg vdiv = bdesc_->use_scaleshift() ? vgamma : vsqrtvar;
 
-                    uni_fdiv(TRegS(IDX(vdiv)), TRegS(IDX(vscale)),
-                            TRegS(IDX(vsqrtvar)));
+		    uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
 
-                    add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff_nspc)));
-                    if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                    uni_load_spat_data(TReg(idx), x_tmp_0);
+                    add(X_TMP_0, reg_src, reg_soff_nspc);
+                    if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                    uni_load_spat_data(TReg(idx), X_TMP_0);
 
-                    uni_fsub(TRegS(idx), TRegS(idx), TRegS(IDX(vmean)));
+                    uni_fsub(TRegS(idx), TRegS(idx), vmean.s);
 
                     if (bdesc_->use_scaleshift()) { // --flags=S
-                        uni_fmad(TRegS(idx), TRegS(vgamma.getIdx()),
-                                TRegS(vbeta.getIdx()), p_512,
-                                TRegS(z_tmp0.getIdx()));
+                        uni_fmad(TRegS(idx), vgamma.s,
+                                vbeta.s,
+                                t_tmp0.s);
                     } else {
-                        fmul(TRegS(idx), TRegS(idx), TRegS(IDX(vsqrtvar)));
+                        fmul(TRegS(idx), TRegS(idx), vsqrtvar.s);
                     }
 
                     if (with_relu_inf_only) { // --attr=post_ops='relu'
-                        uni_fmax(TRegS(idx), TRegS(idx), TRegS(IDX(vzero)));
+                        uni_fmax(TRegS(idx), TRegS(idx), vzero.s);
                     } else if (with_relu) { // --flags=R
                         fwd_process_relu_avx512_common(ZReg(idx));
                     }
 
                     if (stream_store_allowed) {
-                        uni_vmovntps_aarch64(
-                                reg_dst, reg_soff_nspc, offt, TReg(idx));
+                        uni_str(TReg(idx), reg_dst, reg_soff_nspc, offt);
                     } else {
-                        add(x_tmp_0, XReg(IDX(reg_dst)),
-                                XReg(IDX(reg_soff_nspc)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_store_spat_data(x_tmp_0, TReg(idx));
+                        add(X_TMP_0, reg_dst,
+                                reg_soff_nspc);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_store_spat_data(X_TMP_0, TReg(idx));
                     }
 
-                    add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), 2, x_tmp_0);
+                    add_imm(reg_ws, reg_ws, 2, X_TMP_0);
                     coff += vlen;
                     offt += vlen_spat_data_;
                 }
-                add_imm(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                        (int)spat_step, x_tmp_0);
-                sub_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), 2 * num_ch_blks,
-                        x_tmp_0);
-                sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), num_spat_pts,
-                        x_tmp_0);
-                cbnz(XReg(IDX(reg_ctr)), spatial);
+                add_imm(reg_soff_nspc, reg_soff_nspc,
+                        (int)spat_step, X_TMP_0);
+                sub_imm(reg_ws, reg_ws, 2 * num_ch_blks,
+                        X_TMP_0);
+                sub_imm(reg_ctr, reg_ctr, num_spat_pts,
+                        X_TMP_0);
+                cbnz(reg_ctr, spatial);
             }
         };
 
         if (stream_store_supported()) {
             Label normal_store, end_store;
-            cmp(XReg(IDX(reg_dst)), vlen - 1);
-            cbnz(XReg(IDX(reg_dst)), normal_store);
+            cmp(reg_dst, vlen - 1);
+            cbnz(reg_dst, normal_store);
             compute(true);
             b(normal_store);
             L(normal_store);
@@ -990,12 +889,11 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void compute_mean_variance_nspc(bool compute_mean = true) {
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
-        mov(XReg(IDX(reg_coff_max_fwd_copy)), XReg(IDX(reg_coff_max)));
+        eor(reg_coff, reg_coff, reg_coff);
+        mov(reg_coff_max_fwd_copy, reg_coff_max);
 
         Label ch_unroll_label[5];
         const int max_ch_unroll = 4;
-        //                = is_bf16_ && !mayiuse(avx512_core_bf16) ? 3 : 4;
 
         // TODO: Spatial and channel unrolling decisions should be made during
         // initialization depending on the problem size
@@ -1004,31 +902,29 @@ struct jit_bnorm_t : public jit_generator {
             L(ch_unroll_label[ch_idx]);
             {
                 const int ch_blk_size = (1 << (ch_idx - 1)); // 8, 4, 2, 1
-                mov_imm(x_tmp_0, vlen * ch_blk_size);
-                cmp(XReg(IDX(reg_coff_max)), x_tmp_0);
+                mov_imm(X_TMP_0, vlen * ch_blk_size);
+                cmp(reg_coff_max, X_TMP_0);
                 b(LT, ch_unroll_label[ch_idx - 1]);
 
                 const int spat_blk_size = (1 << sp_idx);
                 mean_variance_nspc(ch_blk_size, spat_blk_size, compute_mean);
 
-                add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)),
-                        vlen * ch_blk_size, x_tmp_0);
+                add_imm(reg_src, reg_src,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
+                add_imm(reg_coff, reg_coff,
+                        vlen * ch_blk_size, X_TMP_0);
 
-                sub_imm(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)),
-                        vlen * ch_blk_size, x_tmp_0);
+                sub_imm(reg_coff_max, reg_coff_max,
+                        vlen * ch_blk_size, X_TMP_0);
                 b(ch_unroll_label[ch_idx]);
             }
         }
         L(ch_unroll_label[0]);
 
         // comeback
-        mov(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max_fwd_copy)));
+        mov(reg_coff_max, reg_coff_max_fwd_copy);
 
-        //if (is_bf16_) shr(reg_coff_max, 1);
-        sub(XReg(IDX(reg_src)), XReg(IDX(reg_src)), XReg(IDX(reg_coff_max)));
-        //if (is_bf16_) shl(reg_coff_max, 1);
+        sub(reg_src, reg_src, reg_coff_max);
     }
 
     void var_channels() {
@@ -1036,8 +932,8 @@ struct jit_bnorm_t : public jit_generator {
         L(ch_label);
         {
             uni_load_maybe_tail(vmean, mean_ptr());
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_ldr(TReg(0), x_tmp_0);
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_ldr(TReg(0), X_TMP_0);
             spat_loop(
                     spat_size, unroll_blocks, unroll_regs,
                     [=](size_t base_reg) {
@@ -1048,66 +944,64 @@ struct jit_bnorm_t : public jit_generator {
                         TRegS v = TRegS(3 * base_reg);
                         TRegS vtmp0 = TRegS(3 * base_reg + 1);
                         TRegS vtmp1 = TRegS(3 * base_reg + 2);
-                        TRegS t_mean = TRegS(vmean.getIdx());
+                        TRegS t_mean = vmean.s;
                         size_t offt = i * vlen_spat_data_;
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(TReg(vtmp0.getIdx()), x_tmp_0);
-                        uni_fsub(TRegS(IDX(vtmp1)), TRegS(IDX(t_mean)),
-                                TRegS(IDX(vtmp0)));
-                        uni_fmla(v, vtmp1, vtmp1, p_512);
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+                        add(X_TMP_0, reg_src, reg_soff);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_load_spat_data(TReg(IDX(vtmp0)), X_TMP_0);
+			uni_fsub(vtmp1, t_mean, vtmp0);
+                        uni_fmla(v, vtmp1, vtmp1);
+                        add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t0_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t0_pf_offt,
-                                    x_tmp_1);
-                        prfm(PLDL1KEEP, ptr(x_tmp_0));
+                            add_imm(X_TMP_0, X_TMP_0, offt + t0_pf_offt,
+                                    X_TMP_1);
+                        prfm(PLDL1KEEP, ptr(X_TMP_0));
 
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+                        add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t1_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t1_pf_offt,
-                                    x_tmp_1);
-                        prfm(PLDL2KEEP, ptr(x_tmp_0));
+                            add_imm(X_TMP_0, X_TMP_0, offt + t1_pf_offt,
+                                    X_TMP_1);
+                        prfm(PLDL2KEEP, ptr(X_TMP_0));
                     },
                     [=](size_t base_reg) {
                         TReg b = TReg(0);
                         TReg v = TReg(base_reg * 3);
                         if (base_reg)
-                            fadd(TRegS(IDX(b)), TRegS(IDX(b)), TRegS(IDX(v)));
+			    fadd(b.s, b.s, v.s);
                     });
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
-            add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen, x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_str(TReg(0), X_TMP_0);
+            add_imm(reg_coff, reg_coff, vlen, X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(LT, ch_label);
         }
     }
 
     void compute_mean_variance() {
         uni_eor(TReg(0), TReg(0), TReg(0));
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+        eor(reg_coff, reg_coff, reg_coff);
         Label zero_rbuf;
         L(zero_rbuf);
         {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
+            uni_str(TReg(0), reg_rbuf1, reg_coff);
             if (isa == sve_512)
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
+                add_imm(reg_coff, reg_coff, vlen,
+                        X_TMP_0);
             else
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
-                        x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                add_imm(reg_coff, reg_coff, vlen / 2,
+                        X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(NE, zero_rbuf);
         }
 
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-        ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+        ldr(reg_src, ptr(X_TMP_0));
 
-        eor(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), XReg(IDX(reg_soff)));
+        eor(reg_soff, reg_soff, reg_soff);
         Label mean_spatial;
         L(mean_spatial);
         {
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            eor(reg_coff, reg_coff, reg_coff);
 
             if (isa == asimd) mov(reg_tmp_off, reg_soff);
 
@@ -1127,60 +1021,55 @@ struct jit_bnorm_t : public jit_generator {
             if (is_nspc_) {
                 // Can use static offset since we comeback after spatial loop
                 if (mb_offt) {
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), mb_offt,
-                            x_tmp_0);
-                    add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_src, reg_src, mb_offt,
+                            X_TMP_0);
+                    add_imm(reg_soff, reg_soff, mb_offt,
+                            X_TMP_0);
                 }
             } else {
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        XReg(IDX(reg_mb_stride_Bc)));
+                add(reg_soff, reg_soff,
+                        reg_mb_stride_Bc);
             }
 
-            cmp(XReg(IDX(reg_soff)), XReg(IDX(reg_soff_max)));
+            cmp(reg_soff, reg_soff_max);
             b(LT, mean_spatial);
         }
 
         if (is_nspc_) {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-            ldr(XReg(IDX(reg_src)), ptr(x_tmp_0)); // comeback
+            add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+            ldr(reg_src, ptr(X_TMP_0)); // comeback
         }
 
         Label no_mean_reduction;
         barrier();
         {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_ithr, x_tmp_1);
-            ldr(XReg(IDX(reg_tmp)), ptr(x_tmp_0));
-            cmp(XReg(IDX(reg_tmp)), 0);
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_ithr, X_TMP_1);
+            ldr(reg_tmp, ptr(X_TMP_0));
+            cmp(reg_tmp, 0);
             b(NE, no_mean_reduction);
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_nthr, x_tmp_1);
-            ldr(XReg(IDX(reg_nnthr)), ptr(x_tmp_0));
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_nthr, X_TMP_1);
+            ldr(reg_nnthr, ptr(X_TMP_0));
+            eor(reg_coff, reg_coff, reg_coff);
             Label mean_reduction_channels;
             L(mean_reduction_channels);
             {
-                mov(XReg(IDX(reg_roff)), XReg(IDX(reg_coff)));
+                mov(reg_roff, reg_coff);
                 uni_eor(TReg(0), TReg(0), TReg(0));
                 uni_eor(TReg(1), TReg(1), TReg(1));
-                mov(XReg(IDX(reg_ctr)), XReg(IDX(reg_nnthr)));
+                mov(reg_ctr, reg_nnthr);
                 Label mean_reduction_thrs;
                 L(mean_reduction_thrs);
                 {
-                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-                    if (isa == sve_512) {
-                        ld1w(ZRegS(IDX(z_tmp0)), p_512 / T_z, ptr(x_tmp_0));
-                        fadd(ZRegS(1), ZRegS(1), ZRegS(IDX(z_tmp0)));
-                    } else {
-                        ldr(QReg(tmp_vec_idx[0]), ptr(x_tmp_0));
-                        fadd(VReg4S(1), VReg4S(1), VReg4S(tmp_vec_idx[0]));
-                    }
+                    add(X_TMP_0, reg_rbuf1, reg_roff);
+		    uni_ldr(t_tmp0, X_TMP_0);
+		    fadd(TRegS(1), TRegS(1), t_tmp0.s);
 
-                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-                    uni_str(x_tmp_0, TReg(0));
-                    add(XReg(IDX(reg_roff)), XReg(IDX(reg_roff)),
-                            XReg(IDX(reg_coff_max)));
-                    sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
-                    cbnz(XReg(IDX(reg_ctr)), mean_reduction_thrs);
+                    add(X_TMP_0, reg_rbuf1, reg_roff);
+                    uni_str(TReg(0), X_TMP_0);
+                    add(reg_roff, reg_roff,
+                            reg_coff_max);
+                    sub_imm(reg_ctr, reg_ctr, 1, X_TMP_0);
+                    cbnz(reg_ctr, mean_reduction_thrs);
                 }
                 if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
@@ -1190,13 +1079,13 @@ struct jit_bnorm_t : public jit_generator {
                 uni_store_maybe_tail(mean_ptr(), TReg(1));
 
                 if (isa == sve_512)
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                            x_tmp_0);
+                    add_imm(reg_coff, reg_coff, vlen,
+                            X_TMP_0);
                 else
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
-                            x_tmp_0);
+                    add_imm(reg_coff, reg_coff, vlen / 2,
+                            X_TMP_0);
 
-                cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                cmp(reg_coff, reg_coff_max);
                 b(LT, mean_reduction_channels);
             }
         }
@@ -1204,11 +1093,11 @@ struct jit_bnorm_t : public jit_generator {
         // Suspicious region to here
         barrier();
 
-        eor(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), XReg(IDX(reg_soff)));
+        eor(reg_soff, reg_soff, reg_soff);
         Label var_spatial;
         L(var_spatial);
         {
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            eor(reg_coff, reg_coff, reg_coff);
 
             if (isa == asimd) mov(reg_tmp_off, reg_soff);
 
@@ -1228,57 +1117,52 @@ struct jit_bnorm_t : public jit_generator {
             if (is_nspc_) {
                 // Can use static offset since we comeback after spatial loop
                 if (mb_offt) {
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), mb_offt,
-                            x_tmp_0);
-                    add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_src, reg_src, mb_offt,
+                            X_TMP_0);
+                    add_imm(reg_soff, reg_soff, mb_offt,
+                            X_TMP_0);
                 }
             } else {
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        XReg(IDX(reg_mb_stride_Bc)));
+                add(reg_soff, reg_soff,
+                        reg_mb_stride_Bc);
             }
 
-            cmp(XReg(IDX(reg_soff)), XReg(IDX(reg_soff_max)));
+            cmp(reg_soff, reg_soff_max);
             b(LT, var_spatial);
         }
 
         if (is_nspc_) {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-            ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+            ldr(reg_src, ptr(X_TMP_0));
         }
 
         Label no_var_reduction;
         barrier();
         {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_ithr, x_tmp_1);
-            ldr(XReg(IDX(reg_tmp)), ptr(x_tmp_0));
-            cmp(XReg(IDX(reg_tmp)), 0);
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_ithr, X_TMP_1);
+            ldr(reg_tmp, ptr(X_TMP_0));
+            cmp(reg_tmp, 0);
             b(NE, no_var_reduction);
 
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_nthr, x_tmp_1);
-            ldr(XReg(IDX(reg_nnthr)), ptr(x_tmp_0));
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_nthr, X_TMP_1);
+            ldr(reg_nnthr, ptr(X_TMP_0));
+            eor(reg_coff, reg_coff, reg_coff);
             Label var_reduction_channels;
             L(var_reduction_channels);
             {
-                mov(XReg(IDX(reg_roff)), XReg(IDX(reg_coff)));
+                mov(reg_roff, reg_coff);
                 uni_eor(TReg(1), TReg(1), TReg(1));
-                mov(XReg(IDX(reg_ctr)), XReg(IDX(reg_nnthr)));
+                mov(reg_ctr, reg_nnthr);
                 Label var_reduction_thrs;
                 L(var_reduction_thrs);
                 { // TODO: unroll (?)
-                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_roff)));
-                    if (isa == sve_512) {
-                        ld1w(ZRegS(IDX(z_tmp0)), p_512 / T_z, ptr(x_tmp_0));
-                        fadd(ZRegS(1), ZRegS(1), ZRegS(IDX(z_tmp0)));
-                    } else {
-                        ldr(QReg(tmp_vec_idx[0]), ptr(x_tmp_0));
-                        fadd(VReg4S(1), VReg4S(1), VReg4S(tmp_vec_idx[0]));
-                    }
-                    add(XReg(IDX(reg_roff)), XReg(IDX(reg_roff)),
-                            XReg(IDX(reg_coff_max)));
-                    sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
-                    cbnz(XReg(IDX(reg_ctr)), var_reduction_thrs);
+                    add(X_TMP_0, reg_rbuf1, reg_roff);
+		    uni_ldr(t_tmp0, X_TMP_0);
+		    fadd(TRegS(1), TRegS(1), t_tmp0.s);
+                    add(reg_roff, reg_roff,
+                            reg_coff_max);
+                    sub_imm(reg_ctr, reg_ctr, 1, X_TMP_0);
+                    cbnz(reg_ctr, var_reduction_thrs);
                 }
                 if (isa == sve_512)
                     fdiv(ZRegS(1), p_512 / T_m, ZRegS(IDX(vchan_size)));
@@ -1287,13 +1171,13 @@ struct jit_bnorm_t : public jit_generator {
                 }
                 uni_store_maybe_tail(var_ptr(), TReg(1));
                 if (isa == sve_512)
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                            x_tmp_0);
+                    add_imm(reg_coff, reg_coff, vlen,
+                            X_TMP_0);
                 else
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
-                            x_tmp_0);
+                    add_imm(reg_coff, reg_coff, vlen / 2,
+                            X_TMP_0);
 
-                cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                cmp(reg_coff, reg_coff_max);
                 b(NE, var_reduction_channels);
             }
         }
@@ -1307,8 +1191,8 @@ struct jit_bnorm_t : public jit_generator {
         {
             uni_load_maybe_tail(vmean, mean_ptr());
             uni_load_maybe_tail(vsqrtvar, var_ptr());
-            fadd(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)), TRegS(IDX(veps)));
-            uni_fsqrt(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)));
+	    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+	    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
 
             if (bdesc_->use_scaleshift()) {
                 uni_load_maybe_tail(vgamma, gamma_ptr());
@@ -1318,8 +1202,7 @@ struct jit_bnorm_t : public jit_generator {
             TReg vscale = bdesc_->use_scaleshift() ? vgamma : vone;
             TReg vdiv = bdesc_->use_scaleshift() ? vgamma : vsqrtvar;
 
-            uni_fdiv(
-                    TRegS(IDX(vdiv)), TRegS(IDX(vscale)), TRegS(IDX(vsqrtvar)));
+	    uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
 
             auto compute = [=](bool stream_store_allowed) {
                 spat_loop(
@@ -1328,51 +1211,44 @@ struct jit_bnorm_t : public jit_generator {
                         [=](size_t base_reg, size_t i) {
                             TReg v = TReg(base_reg);
                             size_t offt = i * vlen_spat_data_;
-                            add(x_tmp_0, XReg(IDX(reg_src)),
-                                    XReg(IDX(reg_soff)));
-                            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                            uni_load_spat_data(v, x_tmp_0);
-                            add(x_tmp_0, XReg(IDX(reg_src)),
-                                    XReg(IDX(reg_soff)));
+                            add(X_TMP_0, reg_src,
+                                    reg_soff);
+                            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                            uni_load_spat_data(v, X_TMP_0);
+                            add(X_TMP_0, reg_src,
+                                    reg_soff);
                             if (offt || t0_pf_offt)
-                                add_imm(x_tmp_0, x_tmp_0, offt + t0_pf_offt,
-                                        x_tmp_1);
-                            prfm(PLDL1KEEP, ptr(x_tmp_0));
+                                add_imm(X_TMP_0, X_TMP_0, offt + t0_pf_offt,
+                                        X_TMP_1);
+                            prfm(PLDL1KEEP, ptr(X_TMP_0));
 
-                            add(x_tmp_0, XReg(IDX(reg_src)),
-                                    XReg(IDX(reg_soff)));
+                            add(X_TMP_0, reg_src,
+                                    reg_soff);
                             if (offt || t1_pf_offt)
-                                add_imm(x_tmp_0, x_tmp_0, offt + t1_pf_offt,
-                                        x_tmp_1);
-                            prfm(PLDL2KEEP, ptr(x_tmp_0));
-                            uni_fsub(TRegS(IDX(v)), TRegS(IDX(v)),
-                                    TRegS(IDX(vmean)));
+                                add_imm(X_TMP_0, X_TMP_0, offt + t1_pf_offt,
+                                        X_TMP_1);
+                            prfm(PLDL2KEEP, ptr(X_TMP_0));
+			    uni_fsub(v.s, v.s, vmean.s);
                             if (bdesc_->use_scaleshift()) {
-                                uni_fmad(TRegS(v.getIdx()),
-                                        TRegS(vgamma.getIdx()),
-                                        TRegS(vbeta.getIdx()), p_512,
-                                        TRegS(z_tmp0.getIdx()));
+				uni_fmad(v.s, vgamma.s, vbeta.s, t_tmp0.s);
                             } else {
-                                fmul(TRegS(IDX(v)), TRegS(IDX(v)),
-                                        TRegS(IDX(vsqrtvar)));
+				fmul(v.s, v.s, vsqrtvar.s);
                             }
                             if (with_relu_inf_only) {
-                                uni_fmax(TRegS(IDX(v)), TRegS(IDX(v)),
-                                        TRegS(IDX(vzero)));
+				uni_fmax(v.s, v.s, vzero.s);
                             } else if (with_relu) {
                                 if (isa == sve_512)
                                     fwd_process_relu_avx512_common(
                                             ZReg(IDX(v)), offt);
                             }
                             if (stream_store_allowed) {
-                                uni_vmovntps_aarch64(
-                                        reg_dst, reg_soff, offt, v);
+                                uni_str(v, reg_dst, reg_soff, offt);
                             } else {
-                                add(x_tmp_0, XReg(IDX(reg_dst)),
-                                        XReg(IDX(reg_soff)));
+                                add(X_TMP_0, reg_dst,
+                                        reg_soff);
                                 if (offt)
-                                    add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                                uni_store_spat_data(x_tmp_0, v);
+                                    add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                                uni_store_spat_data(X_TMP_0, v);
                             }
                         },
                         [](size_t base_reg) { UNUSED(base_reg); });
@@ -1380,8 +1256,8 @@ struct jit_bnorm_t : public jit_generator {
 
             if (stream_store_supported()) {
                 Label normal_store, end_store;
-                cmp(XReg(IDX(reg_dst)), vlen - 1);
-                cbnz(XReg(IDX(reg_dst)), normal_store);
+                cmp(reg_dst, vlen - 1);
+                cbnz(reg_dst, normal_store);
                 compute(true);
                 b(end_store);
                 L(normal_store);
@@ -1392,21 +1268,19 @@ struct jit_bnorm_t : public jit_generator {
             }
 
             if (vlen)
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                add_imm(reg_coff, reg_coff, vlen,
+                        X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(LT, ch_label);
         }
     }
 
     void forward_channels_nspc() {
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
-        mov(XReg(IDX(reg_coff_max_fwd_copy)), XReg(IDX(reg_coff_max)));
+        eor(reg_coff, reg_coff, reg_coff);
+        mov(reg_coff_max_fwd_copy, reg_coff_max);
 
         Label ch_unroll_label[5];
-        const int max_ch_unroll
-                //                = is_bf16_ && !mayiuse(avx512_core_bf16) ? 3 : 4;
-                = is_bf16_ ? 3 : 4;
+        const int max_ch_unroll = 4;
 
         // TODO: Spatial and channel unrolling decisions should be made during
         // initialization depending on the problem size
@@ -1414,57 +1288,55 @@ struct jit_bnorm_t : public jit_generator {
             L(ch_unroll_label[ch_idx]);
             {
                 const int ch_blk_size = (1 << (ch_idx - 1)); // 8, 4, 2, 1
-                mov_imm(x_tmp_0, vlen * ch_blk_size);
-                cmp(XReg(IDX(reg_coff_max)), x_tmp_0);
+                mov_imm(X_TMP_0, vlen * ch_blk_size);
+                cmp(reg_coff_max, X_TMP_0);
                 b(LT, ch_unroll_label[ch_idx - 1]);
 
                 forward_channels_nspc_compute(ch_blk_size);
 
-                add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
-                add_imm(XReg(IDX(reg_dst)), XReg(IDX(reg_dst)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
+                add_imm(reg_src, reg_src,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
+                add_imm(reg_dst, reg_dst,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
 
                 // advance mean_ptr() and var_ptr()
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)),
-                        vlen * ch_blk_size, x_tmp_0);
+                add_imm(reg_coff, reg_coff,
+                        vlen * ch_blk_size, X_TMP_0);
 
-                add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), 2 * ch_blk_size,
-                        x_tmp_0);
+                add_imm(reg_ws, reg_ws, 2 * ch_blk_size,
+                        X_TMP_0);
 
-                sub_imm(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)),
-                        vlen * ch_blk_size, x_tmp_0);
+                sub_imm(reg_coff_max, reg_coff_max,
+                        vlen * ch_blk_size, X_TMP_0);
                 b(ch_unroll_label[ch_idx]);
             }
         }
         L(ch_unroll_label[0]);
 
         // comeback
-        mov(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max_fwd_copy)));
+        mov(reg_coff_max, reg_coff_max_fwd_copy);
 
-        //if (is_bf16_) shr(reg_coff_max, 1);
-        sub(XReg(IDX(reg_src)), XReg(IDX(reg_src)), XReg(IDX(reg_coff_max)));
-        sub(XReg(IDX(reg_dst)), XReg(IDX(reg_dst)), XReg(IDX(reg_coff_max)));
-        //if (is_bf16_) shl(reg_coff_max, 1);
+        sub(reg_src, reg_src, reg_coff_max);
+        sub(reg_dst, reg_dst, reg_coff_max);
 
-        lsr(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
-        sub(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), XReg(IDX(reg_coff_max)));
-        lsl(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
+        lsr(reg_coff_max, reg_coff_max, 5 % 64);
+        sub(reg_ws, reg_ws, reg_coff_max);
+        lsl(reg_coff_max, reg_coff_max, 5 % 64);
     }
 
     void forward() {
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-        ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_dst, x_tmp_1);
-        ldr(XReg(IDX(reg_dst)), ptr(x_tmp_0));
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
-        ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+        ldr(reg_src, ptr(X_TMP_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_dst, X_TMP_1);
+        ldr(reg_dst, ptr(X_TMP_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_ws, X_TMP_1);
+        ldr(reg_ws, ptr(X_TMP_0));
 
-        eor(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), XReg(IDX(reg_soff)));
+        eor(reg_soff, reg_soff, reg_soff);
         Label dst_spatial;
         L(dst_spatial);
         {
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            eor(reg_coff, reg_coff, reg_coff);
             if (isa == asimd) mov(reg_tmp_off, reg_soff);
 
             is_nspc_ ? forward_channels_nspc() : forward_channels();
@@ -1485,34 +1357,34 @@ struct jit_bnorm_t : public jit_generator {
             if (is_nspc_) {
                 // Can use static offset since we comeback after spatial loop
                 if (mb_offt) {
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), mb_offt,
-                            x_tmp_0);
-                    add_imm(XReg(IDX(reg_dst)), XReg(IDX(reg_dst)), mb_offt,
-                            x_tmp_0);
-                    add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_src, reg_src, mb_offt,
+                            X_TMP_0);
+                    add_imm(reg_dst, reg_dst, mb_offt,
+                            X_TMP_0);
+                    add_imm(reg_soff, reg_soff, mb_offt,
+                            X_TMP_0);
                 }
                 if (ws_mb_offt) {
-                    add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), ws_mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_ws, reg_ws, ws_mb_offt,
+                            X_TMP_0);
                 }
             } else {
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        XReg(IDX(reg_mb_stride_Bc)));
+                add(reg_soff, reg_soff,
+                        reg_mb_stride_Bc);
             }
 
-            cmp(XReg(IDX(reg_soff)), XReg(IDX(reg_soff_max)));
+            cmp(reg_soff, reg_soff_max);
             b(LT, dst_spatial);
         }
 
         if (is_nspc_) {
             // comeback
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-            ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_dst, x_tmp_1);
-            ldr(XReg(IDX(reg_dst)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
-            ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+            ldr(reg_src, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_dst, X_TMP_1);
+            ldr(reg_dst, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_ws, X_TMP_1);
+            ldr(reg_ws, ptr(X_TMP_0));
         }
     }
 
@@ -1521,10 +1393,10 @@ struct jit_bnorm_t : public jit_generator {
         L(sh_channels);
         {
             uni_load_maybe_tail(vmean, mean_ptr());
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_ldr(TReg(0), x_tmp_0);
-            add(x_tmp_0, XReg(IDX(reg_rbuf2)), XReg(IDX(reg_coff)));
-            uni_ldr(TReg(1), x_tmp_0);
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_ldr(TReg(0), X_TMP_0);
+            add(X_TMP_0, reg_rbuf2, reg_coff);
+            uni_ldr(TReg(1), X_TMP_0);
             spat_loop(
                     spat_size, 1, 1,
                     [=](size_t base_reg) {
@@ -1542,13 +1414,13 @@ struct jit_bnorm_t : public jit_generator {
                         TReg t2 = TReg(base_reg * 5 + 3);
                         TReg t3 = TReg(base_reg * 5 + 4);
                         size_t offt = i * vlen_spat_data_;
-                        add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(t1, x_tmp_0);
-                        add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                XReg(IDX(reg_soff)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(t2, x_tmp_0);
+                        add(X_TMP_0, reg_src, reg_soff);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_load_spat_data(t1, X_TMP_0);
+                        add(X_TMP_0, reg_diff_dst,
+                                reg_soff);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_load_spat_data(t2, X_TMP_0);
                         if (with_relu) {
                             if (isa == sve_512)
                                 bwd_process_relu_avx512_common(
@@ -1556,85 +1428,75 @@ struct jit_bnorm_t : public jit_generator {
                             else
                                 assert(false);
                         }
-                        uni_fsub(TRegS(IDX(t3)), TRegS(IDX(vmean)),
-                                TRegS(IDX(t1)));
+			uni_fsub(t3.s, vmean.s, t1.s);
                         if (isa == asimd) {
-                            fmul(TRegS(IDX(t3)), TRegS(IDX(t3)),
-                                    TRegS(IDX(t2)));
-                            fsub(TRegS(IDX(o0)), TRegS(IDX(o0)),
-                                    TRegS(IDX(t3)));
+			    fmul(t3.s, t3.s, t2.s);
+			    uni_fsub(o0.s, o0.s, t3.s);
                         } else {
-                            uni_fmls(TRegS(IDX(o0)), TRegS(IDX(t3)),
-                                    TRegS(IDX(t2)));
+			    uni_fmls(o0.s, t3.s, t2.s);
                         }
-                        fadd(TRegS(IDX(o1)), TRegS(IDX(o1)), TRegS(IDX(t2)));
-                        add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                XReg(IDX(reg_soff)));
-                        add(x_tmp_1, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+			fadd(o1.s, o1.s, t2.s);
+                        add(X_TMP_0, reg_diff_dst,
+                                reg_soff);
+                        add(X_TMP_1, reg_src, reg_soff);
                         if (offt || t0_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t0_pf_offt,
-                                    x_tmp_2);
-                        prfm(PLDL1KEEP, ptr(x_tmp_0));
+                            add(X_TMP_0, X_TMP_0, offt + t0_pf_offt);
+                        prfm(PLDL1KEEP, ptr(X_TMP_0));
                         if (offt || t0_pf_offt)
-                            add_imm(x_tmp_1, x_tmp_1, offt + t0_pf_offt,
-                                    x_tmp_2);
-                        prfm(PLDL1KEEP, ptr(x_tmp_1));
+                            add(X_TMP_1, X_TMP_1, offt + t0_pf_offt);
+                        prfm(PLDL1KEEP, ptr(X_TMP_1));
 
-                        add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                XReg(IDX(reg_soff)));
-                        add(x_tmp_1, XReg(IDX(reg_src)), XReg(IDX(reg_soff)));
+                        add(X_TMP_0, reg_diff_dst,
+                                reg_soff);
+                        add(X_TMP_1, reg_src, reg_soff);
                         if (offt || t1_pf_offt)
-                            add_imm(x_tmp_0, x_tmp_0, offt + t1_pf_offt,
-                                    x_tmp_2);
-                        prfm(PLDL2KEEP, ptr(x_tmp_0));
+                            add(X_TMP_0, X_TMP_0, offt + t1_pf_offt);
+                        prfm(PLDL2KEEP, ptr(X_TMP_0));
                         if (offt || t1_pf_offt)
-                            add_imm(x_tmp_1, x_tmp_1, offt + t1_pf_offt,
-                                    x_tmp_2);
-                        prfm(PLDL2KEEP, ptr(x_tmp_1));
+                            add(X_TMP_1, X_TMP_1, offt + t1_pf_offt);
+                        prfm(PLDL2KEEP, ptr(X_TMP_1));
                     },
                     [=](size_t base_reg) {
                         TReg b0 = TReg(0);
                         TReg b1 = TReg(1);
                         if (base_reg) {
-                            fadd(TRegS(IDX(b0)), TRegS(IDX(b0)),
-                                    TRegS(base_reg * 5 + 0));
-                            fadd(TRegS(IDX(b1)), TRegS(IDX(b1)),
-                                    TRegS(base_reg * 5 + 1));
+			    fadd(b0.s, b0.s, TRegS(base_reg * 5 + 0));
+			    fadd(b1.s, b1.s, TRegS(base_reg * 5 + 1));
                         }
                     });
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
-            add(x_tmp_0, XReg(IDX(reg_rbuf2)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(1));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_str(TReg(0), X_TMP_0);
+            add(X_TMP_0, reg_rbuf2, reg_coff);
+            uni_str(TReg(1), X_TMP_0);
             if (vlen)
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                add_imm(reg_coff, reg_coff, vlen,
+                        X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(LT, sh_channels);
         }
     }
 
     void backward_sh_channels_nspc_compute(const int num_ch_blks) {
         for (int idx = 0, offt = 0; idx < 2 * num_ch_blks; offt += vlen) {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_ldr(TReg(idx++), x_tmp_0);
-            add(x_tmp_0, XReg(IDX(reg_rbuf2)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_ldr(TReg(idx++), x_tmp_0);
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_ldr(TReg(idx++), X_TMP_0);
+            add(X_TMP_0, reg_rbuf2, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_ldr(TReg(idx++), X_TMP_0);
         }
 
-        eor(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                XReg(IDX(reg_soff_nspc)));
+        eor(reg_soff_nspc, reg_soff_nspc,
+                reg_soff_nspc);
 
         if (is_spatial_thr_) {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
-                    x_tmp_1);
-            ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
-            ldr(XReg(IDX(reg_soff_nspc)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_spat_size_loc,
+                    X_TMP_1);
+            ldr(reg_ctr, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_s_s, X_TMP_1);
+            ldr(reg_soff_nspc, ptr(X_TMP_0));
         } else {
-            mov_imm(XReg(IDX(reg_ctr)), spat_size);
+            mov_imm(reg_ctr, spat_size);
         }
 
         // TODO: spatial blocking
@@ -1647,12 +1509,12 @@ struct jit_bnorm_t : public jit_generator {
             for (int ch_idx = 0; ch_idx < 2 * num_ch_blks; ch_idx += 2) {
                 uni_load_maybe_tail(vmean, mean_ptr(coff));
 
-                add(x_tmp_0, XReg(IDX(reg_src)), XReg(IDX(reg_soff_nspc)));
-                if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                uni_load_spat_data(TReg(sp_idx), x_tmp_0);
-                add(x_tmp_0, XReg(IDX(reg_diff_dst)), XReg(IDX(reg_soff_nspc)));
-                if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                uni_load_spat_data(TReg(sp_idx + 1), x_tmp_0);
+                add(X_TMP_0, reg_src, reg_soff_nspc);
+                if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                uni_load_spat_data(TReg(sp_idx), X_TMP_0);
+                add(X_TMP_0, reg_diff_dst, reg_soff_nspc);
+                if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                uni_load_spat_data(TReg(sp_idx + 1), X_TMP_0);
 
                 if (with_relu) {
                     if (isa == sve_512)
@@ -1661,7 +1523,7 @@ struct jit_bnorm_t : public jit_generator {
                         assert(false);
                 }
 
-                uni_fsub(TRegS(sp_idx + 2), TRegS(IDX(vmean)), TRegS(sp_idx));
+                uni_fsub(TRegS(sp_idx + 2), vmean.s, TRegS(sp_idx));
                 uni_fmls(TRegS(ch_idx), TRegS(sp_idx + 2), TRegS(sp_idx + 1));
                 fadd(TRegS(ch_idx + 1), TRegS(ch_idx + 1), TRegS(sp_idx + 1));
 
@@ -1669,30 +1531,29 @@ struct jit_bnorm_t : public jit_generator {
                 offt += vlen_spat_data_;
                 sp_idx += 3;
             }
-            add_imm(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                    spat_step, x_tmp_0);
-            sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), num_spat_pts,
-                    x_tmp_0);
-            cbnz(XReg(IDX(reg_ctr)), spatial);
+            add_imm(reg_soff_nspc, reg_soff_nspc,
+                    spat_step, X_TMP_0);
+            sub_imm(reg_ctr, reg_ctr, num_spat_pts,
+                    X_TMP_0);
+            cbnz(reg_ctr, spatial);
         }
 
         for (int idx = 0, offt = 0; idx < 2 * num_ch_blks; offt += vlen) {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_str(x_tmp_0, TReg(idx++));
-            add(x_tmp_0, XReg(IDX(reg_rbuf2)), XReg(IDX(reg_coff)));
-            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-            uni_str(x_tmp_0, TReg(idx++));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_str(TReg(idx++), X_TMP_0);
+            add(X_TMP_0, reg_rbuf2, reg_coff);
+            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+            uni_str(TReg(idx++), X_TMP_0);
         }
     }
 
     void backward_sh_channels_nspc() {
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
-        mov(XReg(IDX(reg_coff_max_bwd_copy)), XReg(IDX(reg_coff_max)));
+        eor(reg_coff, reg_coff, reg_coff);
+        mov(reg_coff_max_bwd_copy, reg_coff_max);
 
         Label ch_unroll_label[5];
-        const int max_ch_unroll = is_bf16_ ? 1 : 3;
-        //= is_bf16_ && !mayiuse(avx512_core_bf16) ? 1 : 3;
+        const int max_ch_unroll = 3;
 
         // TODO: Spatial and channel unrolling decisions should be made during
         // initialization depending on the problem size
@@ -1700,46 +1561,44 @@ struct jit_bnorm_t : public jit_generator {
             L(ch_unroll_label[ch_idx]);
             {
                 const int ch_blk_size = (1 << (ch_idx - 1)); // 4, 2, 1
-                cmp(XReg(IDX(reg_coff_max)), vlen * ch_blk_size);
+                cmp(reg_coff_max, vlen * ch_blk_size);
                 b(LT, ch_unroll_label[ch_idx - 1]);
 
                 backward_sh_channels_nspc_compute(ch_blk_size);
 
-                add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
-                add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
+                add_imm(reg_src, reg_src,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
+                add_imm(reg_diff_dst, reg_diff_dst,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
 
                 // advance mean_ptr() and var_ptr()
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)),
-                        vlen * ch_blk_size, x_tmp_0);
+                add_imm(reg_coff, reg_coff,
+                        vlen * ch_blk_size, X_TMP_0);
 
-                add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), 2 * ch_blk_size,
-                        x_tmp_0);
+                add_imm(reg_ws, reg_ws, 2 * ch_blk_size,
+                        X_TMP_0);
 
-                sub_imm(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)),
-                        vlen * ch_blk_size, x_tmp_0);
+                sub_imm(reg_coff_max, reg_coff_max,
+                        vlen * ch_blk_size, X_TMP_0);
                 b(ch_unroll_label[ch_idx]);
             }
         }
         L(ch_unroll_label[0]);
 
         // comeback
-        mov(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max_bwd_copy)));
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_scale_shift,
-                x_tmp_1);
-        ldr(XReg(IDX(reg_diff_scale_shift)), ptr(x_tmp_0));
+        mov(reg_coff_max, reg_coff_max_bwd_copy);
+        add_imm(X_TMP_0, rsp, (int)stack_off_diff_scale_shift,
+                X_TMP_1);
+        ldr(reg_diff_scale_shift, ptr(X_TMP_0));
 
-        //if (is_bf16_) shr(reg_coff_max, 1);
-        sub(XReg(IDX(reg_src)), XReg(IDX(reg_src)), XReg(IDX(reg_coff_max)));
-        sub(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                XReg(IDX(reg_coff_max)));
-        //if (is_bf16_) shl(reg_coff_max, 1);
+        sub(reg_src, reg_src, reg_coff_max);
+        sub(reg_diff_dst, reg_diff_dst,
+                reg_coff_max);
 
         if (with_relu) {
-            lsr(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
-            sub(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), XReg(IDX(reg_coff_max)));
-            lsl(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
+            lsr(reg_coff_max, reg_coff_max, 5 % 64);
+            sub(reg_ws, reg_ws, reg_coff_max);
+            lsl(reg_coff_max, reg_coff_max, 5 % 64);
         }
     }
 
@@ -1749,20 +1608,16 @@ struct jit_bnorm_t : public jit_generator {
         {
             uni_load_maybe_tail(vmean, mean_ptr());
             uni_load_maybe_tail(vsqrtvar, var_ptr());
-            fadd(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)), TRegS(IDX(veps)));
-            uni_fsqrt(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)));
-            uni_fdiv(TRegS(IDX(vsqrtvar)), TRegS(IDX(vone)),
-                    TRegS(IDX(vsqrtvar)));
+	    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+	    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+	    uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
             if (bdesc_->use_scaleshift())
                 uni_load_maybe_tail(vgamma, gamma_ptr());
             uni_load_maybe_tail(vdiff_gamma, diff_gamma_ptr());
             uni_load_maybe_tail(vdiff_beta, diff_beta_ptr());
-            fmul(TRegS(IDX(vdiff_gamma)), TRegS(IDX(vdiff_gamma)),
-                    TRegS(IDX(vsqrtvar)));
-            uni_fdiv(TRegS(IDX(vdiff_beta)), TRegS(IDX(vdiff_beta)),
-                    TRegS(IDX(vchan_size)));
-            uni_fdiv(TRegS(IDX(vdiff_gamma)), TRegS(IDX(vdiff_gamma)),
-                    TRegS(IDX(vchan_size)));
+	    fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
+	    uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
+	    uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
 
             auto compute = [=](bool stream_store_allowed) {
                 spat_loop(
@@ -1773,10 +1628,10 @@ struct jit_bnorm_t : public jit_generator {
                             TReg t(base_reg * 2 + 1);
                             TReg t1(base_reg * 2 + 2);
                             size_t offt = i * vlen_spat_data_;
-                            add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                    XReg(IDX(reg_soff)));
-                            if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                            uni_load_spat_data(v, x_tmp_0);
+                            add(X_TMP_0, reg_diff_dst,
+                                    reg_soff);
+                            if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                            uni_load_spat_data(v, X_TMP_0);
                             if (with_relu) {
                                 if (isa == sve_512)
                                     bwd_process_relu_avx512_common(
@@ -1785,69 +1640,58 @@ struct jit_bnorm_t : public jit_generator {
                                     assert(false);
                             }
                             if (!bdesc_->use_global_stats()) {
-                                uni_fsub(TRegS(IDX(v)), TRegS(IDX(v)),
-                                        TRegS(IDX(vdiff_beta)));
-                                add(x_tmp_0, XReg(IDX(reg_src)),
-                                        XReg(IDX(reg_soff)));
+				uni_fsub(v.s, v.s, vdiff_beta.s);
+                                add(X_TMP_0, reg_src,
+                                        reg_soff);
                                 if (offt)
-                                    add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                                uni_load_spat_data(t, x_tmp_0);
-                                uni_fsub(TRegS(IDX(t)), TRegS(IDX(vmean)),
-                                        TRegS(IDX(t)));
-                                fmul(TRegS(IDX(t)), TRegS(IDX(t)),
-                                        TRegS(IDX(vdiff_gamma)));
-                                fadd(TRegS(IDX(v)), TRegS(IDX(v)),
-                                        TRegS(IDX(t)));
+                                    add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                                uni_load_spat_data(t, X_TMP_0);
+				uni_fsub(t.s, vmean.s, t.s);
+				fmul(t.s, t.s, vdiff_gamma.s);
+				fadd(v.s, v.s, t.s);
                             }
-                            fmul(TRegS(IDX(v)), TRegS(IDX(v)),
-                                    TRegS(IDX(vsqrtvar)));
+			    fmul(v.s, v.s, vsqrtvar.s);
                             if (bdesc_->use_scaleshift()) {
-                                fmul(TRegS(IDX(v)), TRegS(IDX(v)),
-                                        TRegS(IDX(vgamma)));
+			        fmul(v.s, v.s, vgamma.s);
                             }
                             if (stream_store_allowed) {
-                                uni_vmovntps_aarch64(
-                                        reg_diff_src, reg_soff, offt, v);
+                                uni_str(v, reg_diff_src, reg_soff, offt);
                             } else {
-                                add(x_tmp_0, XReg(IDX(reg_diff_src)),
-                                        XReg(IDX(reg_soff)));
+                                add(X_TMP_0, reg_diff_src,
+                                        reg_soff);
                                 if (offt)
-                                    add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                                uni_store_spat_data(x_tmp_0, v);
+                                    add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                                uni_store_spat_data(X_TMP_0, v);
                             }
-                            add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                    XReg(IDX(reg_soff)));
-                            add(x_tmp_1, XReg(IDX(reg_src)),
-                                    XReg(IDX(reg_soff)));
+                            add(X_TMP_0, reg_diff_dst,
+                                    reg_soff);
+                            add(X_TMP_1, reg_src,
+                                    reg_soff);
                             if (offt || t0_pf_offt)
-                                add_imm(x_tmp_0, x_tmp_0, offt + t0_pf_offt,
-                                        x_tmp_2);
-                            prfm(PLDL1KEEP, ptr(x_tmp_0));
+                                add(X_TMP_0, X_TMP_0, offt + t0_pf_offt);
+                            prfm(PLDL1KEEP, ptr(X_TMP_0));
                             if (offt || t0_pf_offt)
-                                add_imm(x_tmp_1, x_tmp_1, offt + t0_pf_offt,
-                                        x_tmp_2);
-                            prfm(PLDL1KEEP, ptr(x_tmp_1));
+                                add(X_TMP_1, X_TMP_1, offt + t0_pf_offt);
+                            prfm(PLDL1KEEP, ptr(X_TMP_1));
 
-                            add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                                    XReg(IDX(reg_soff)));
-                            add(x_tmp_1, XReg(IDX(reg_src)),
-                                    XReg(IDX(reg_soff)));
+                            add(X_TMP_0, reg_diff_dst,
+                                    reg_soff);
+                            add(X_TMP_1, reg_src,
+                                    reg_soff);
                             if (offt || t1_pf_offt)
-                                add_imm(x_tmp_0, x_tmp_0, offt + t1_pf_offt,
-                                        x_tmp_2);
-                            prfm(PLDL2KEEP, ptr(x_tmp_0));
+                                add(X_TMP_0, X_TMP_0, offt + t1_pf_offt);
+                            prfm(PLDL2KEEP, ptr(X_TMP_0));
                             if (offt || t1_pf_offt)
-                                add_imm(x_tmp_1, x_tmp_1, offt + t1_pf_offt,
-                                        x_tmp_2);
-                            prfm(PLDL2KEEP, ptr(x_tmp_1));
+                                add(X_TMP_1, X_TMP_1, offt + t1_pf_offt);
+                            prfm(PLDL2KEEP, ptr(X_TMP_1));
                         },
                         [=](size_t base_reg) { UNUSED(base_reg); });
             };
 
             if (stream_store_supported()) {
                 Label normal_store, end_store;
-                cmp(XReg(IDX(reg_diff_src)), vlen - 1);
-                cbnz(XReg(IDX(reg_diff_src)), normal_store);
+                cmp(reg_diff_src, vlen - 1);
+                cbnz(reg_diff_src, normal_store);
                 compute(true);
                 b(end_store);
                 L(normal_store);
@@ -1858,25 +1702,25 @@ struct jit_bnorm_t : public jit_generator {
             }
 
             if (vlen)
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                add_imm(reg_coff, reg_coff, vlen,
+                        X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(LT, diff_channels);
         }
     }
 
     void backward_diff_channels_nspc_compute(const int num_ch_blks) {
         auto compute = [=](bool stream_store_allowed) {
-            eor(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                    XReg(IDX(reg_soff_nspc)));
+            eor(reg_soff_nspc, reg_soff_nspc,
+                    reg_soff_nspc);
             if (is_spatial_thr_) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_spat_size_loc,
-                        x_tmp_1);
-                ldr(XReg(IDX(reg_ctr)), ptr(x_tmp_0));
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_s_s, x_tmp_1);
-                ldr(XReg(IDX(reg_soff_nspc)), ptr(x_tmp_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_spat_size_loc,
+                        X_TMP_1);
+                ldr(reg_ctr, ptr(X_TMP_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_s_s, X_TMP_1);
+                ldr(reg_soff_nspc, ptr(X_TMP_0));
             } else {
-                mov_imm(XReg(IDX(reg_ctr)), spat_size);
+                mov_imm(reg_ctr, spat_size);
             }
 
             // TODO: spatial blocking
@@ -1890,44 +1734,39 @@ struct jit_bnorm_t : public jit_generator {
                     uni_load_maybe_tail(vmean, mean_ptr(coff));
                     uni_load_maybe_tail(vsqrtvar, var_ptr(coff));
 
-                    fadd(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)),
-                            TRegS(IDX(veps)));
-                    uni_fsqrt(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)));
-                    uni_fdiv(TRegS(IDX(vsqrtvar)), TRegS(IDX(vone)),
-                            TRegS(IDX(vsqrtvar)));
+		    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+		    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+		    uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
 
                     if (bdesc_->use_scaleshift())
                         uni_load_maybe_tail(vgamma, gamma_ptr(coff));
 
-                    add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws_off_copy,
-                            x_tmp_1);
-                    str(XReg(IDX(reg_ws)), ptr(x_tmp_0));
-                    add_imm(x_tmp_0, XReg(IDX(rsp)),
-                            (int)stack_off_diff_scale_shift, x_tmp_1);
-                    ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
-                    add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
-                    if (coff) add_imm(x_tmp_0, x_tmp_0, coff, x_tmp_1);
-                    uni_load_maybe_tail(vdiff_gamma, x_tmp_0);
-                    add(x_tmp_0, XReg(IDX(reg_ws)), XReg(IDX(reg_coff)));
+                    add_imm(X_TMP_0, rsp, (int)stack_off_ws_off_copy,
+                            X_TMP_1);
+                    str(reg_ws, ptr(X_TMP_0));
+                    add_imm(X_TMP_0, rsp,
+                            (int)stack_off_diff_scale_shift, X_TMP_1);
+                    ldr(reg_ws, ptr(X_TMP_0));
+                    add(X_TMP_0, reg_ws, reg_coff);
+                    if (coff) add_imm(X_TMP_0, X_TMP_0, coff, X_TMP_1);
+                    uni_load_maybe_tail(vdiff_gamma, X_TMP_0);
+                    add(X_TMP_0, reg_ws, reg_coff);
                     if (coff || chan_data_offt)
-                        add_imm(x_tmp_0, x_tmp_0, coff + chan_data_offt,
-                                x_tmp_1);
-                    uni_load_maybe_tail(vdiff_beta, x_tmp_0);
-                    add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws_off_copy,
-                            x_tmp_1);
-                    ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+                        add_imm(X_TMP_0, X_TMP_0, coff + chan_data_offt,
+                                X_TMP_1);
+                    uni_load_maybe_tail(vdiff_beta, X_TMP_0);
+                    add_imm(X_TMP_0, rsp, (int)stack_off_ws_off_copy,
+                            X_TMP_1);
+                    ldr(reg_ws, ptr(X_TMP_0));
 
-                    fmul(TRegS(IDX(vdiff_gamma)), TRegS(IDX(vdiff_gamma)),
-                            TRegS(IDX(vsqrtvar)));
-                    uni_fdiv(TRegS(IDX(vdiff_beta)), TRegS(IDX(vdiff_beta)),
-                            TRegS(IDX(vchan_size)));
-                    uni_fdiv(TRegS(IDX(vdiff_gamma)), TRegS(IDX(vdiff_gamma)),
-                            TRegS(IDX(vchan_size)));
+		    fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
+		    uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
+		    uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
 
-                    add(x_tmp_0, XReg(IDX(reg_diff_dst)),
-                            XReg(IDX(reg_soff_nspc)));
-                    if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                    uni_load_spat_data(TReg(idx), x_tmp_0);
+                    add(X_TMP_0, reg_diff_dst,
+                            reg_soff_nspc);
+                    if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                    uni_load_spat_data(TReg(idx), X_TMP_0);
 
                     if (with_relu) {
                         if (isa == sve_512)
@@ -1938,50 +1777,49 @@ struct jit_bnorm_t : public jit_generator {
 
                     if (!bdesc_->use_global_stats()) {
                         uni_fsub(
-                                TRegS(idx), TRegS(idx), TRegS(IDX(vdiff_beta)));
-                        add(x_tmp_0, XReg(IDX(reg_src)),
-                                XReg(IDX(reg_soff_nspc)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_load_spat_data(TReg(idx + 1), x_tmp_0);
-                        uni_fsub(TRegS(idx + 1), TRegS(IDX(vmean)),
+                                TRegS(idx), TRegS(idx), vdiff_beta.s);
+                        add(X_TMP_0, reg_src,
+                                reg_soff_nspc);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_load_spat_data(TReg(idx + 1), X_TMP_0);
+                        uni_fsub(TRegS(idx + 1), vmean.s,
                                 TRegS(idx + 1));
                         fmul(TRegS(idx + 1), TRegS(idx + 1),
-                                TRegS(IDX(vdiff_gamma)));
+                                vdiff_gamma.s);
                         fadd(TRegS(idx), TRegS(idx), TRegS(idx + 1));
                     }
 
-                    fmul(TRegS(idx), TRegS(idx), TRegS(IDX(vsqrtvar)));
+                    fmul(TRegS(idx), TRegS(idx), vsqrtvar.s);
 
                     if (bdesc_->use_scaleshift()) {
-                        fmul(TRegS(idx), TRegS(idx), TRegS(IDX(vgamma)));
+                        fmul(TRegS(idx), TRegS(idx), vgamma.s);
                     }
 
                     if (stream_store_allowed) {
-                        uni_vmovntps_aarch64(
-                                reg_diff_src, reg_soff_nspc, offt, TReg(idx));
+                        uni_str(TReg(idx), reg_diff_src, reg_soff_nspc, offt);
 
                     } else {
-                        add(x_tmp_0, XReg(IDX(reg_diff_src)),
-                                XReg(IDX(reg_soff_nspc)));
-                        if (offt) add_imm(x_tmp_0, x_tmp_0, offt, x_tmp_1);
-                        uni_store_spat_data(x_tmp_0, TReg(idx));
+                        add(X_TMP_0, reg_diff_src,
+                                reg_soff_nspc);
+                        if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
+                        uni_store_spat_data(X_TMP_0, TReg(idx));
                     }
 
                     coff += vlen;
                     offt += vlen_spat_data_;
                 }
-                add_imm(XReg(IDX(reg_soff_nspc)), XReg(IDX(reg_soff_nspc)),
-                        spat_step, x_tmp_0);
-                sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), num_spat_pts,
-                        x_tmp_0);
-                cbnz(XReg(IDX(reg_ctr)), spatial);
+                add_imm(reg_soff_nspc, reg_soff_nspc,
+                        spat_step, X_TMP_0);
+                sub_imm(reg_ctr, reg_ctr, num_spat_pts,
+                        X_TMP_0);
+                cbnz(reg_ctr, spatial);
             }
         };
 
         if (stream_store_supported()) {
             Label normal_store, end_store;
-            cmp(XReg(IDX(reg_diff_src)), vlen - 1);
-            cbnz(XReg(IDX(reg_diff_src)), normal_store);
+            cmp(reg_diff_src, vlen - 1);
+            cbnz(reg_diff_src, normal_store);
             compute(true);
             b(end_store);
             L(normal_store);
@@ -1993,13 +1831,11 @@ struct jit_bnorm_t : public jit_generator {
     }
 
     void backward_diff_channels_nspc() {
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
-        mov(XReg(IDX(reg_coff_max_bwd_copy)), XReg(IDX(reg_coff_max)));
+        eor(reg_coff, reg_coff, reg_coff);
+        mov(reg_coff_max_bwd_copy, reg_coff_max);
 
         Label ch_unroll_label[5];
-        const int max_ch_unroll
-                //= is_bf16_ && !mayiuse(avx512_core_bf16) ? 1 : 3;
-                = is_bf16_ ? 1 : 3;
+        const int max_ch_unroll = 3;
 
         // TODO: Spatial and channel unrolling decisions should be made during
         // initialization depending on the problem size
@@ -2007,89 +1843,87 @@ struct jit_bnorm_t : public jit_generator {
             L(ch_unroll_label[ch_idx]);
             {
                 const int ch_blk_size = (1 << (ch_idx - 1)); // 4, 2, 1
-                cmp(XReg(IDX(reg_coff_max)), vlen * ch_blk_size);
+                cmp(reg_coff_max, vlen * ch_blk_size);
                 b(LT, ch_unroll_label[ch_idx - 1]);
 
                 backward_diff_channels_nspc_compute(ch_blk_size);
 
-                add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
+                add_imm(reg_diff_dst, reg_diff_dst,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
                 if (!bdesc_->use_global_stats())
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)),
-                            vlen_spat_data_ * ch_blk_size, x_tmp_0);
-                add_imm(XReg(IDX(reg_diff_src)), XReg(IDX(reg_diff_src)),
-                        vlen_spat_data_ * ch_blk_size, x_tmp_0);
+                    add_imm(reg_src, reg_src,
+                            vlen_spat_data_ * ch_blk_size, X_TMP_0);
+                add_imm(reg_diff_src, reg_diff_src,
+                        vlen_spat_data_ * ch_blk_size, X_TMP_0);
 
                 // advance mean_ptr() and var_ptr()
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)),
-                        vlen * ch_blk_size, x_tmp_0);
+                add_imm(reg_coff, reg_coff,
+                        vlen * ch_blk_size, X_TMP_0);
 
-                add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), 2 * ch_blk_size,
-                        x_tmp_0);
+                add_imm(reg_ws, reg_ws, 2 * ch_blk_size,
+                        X_TMP_0);
 
-                sub_imm(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)),
-                        vlen * ch_blk_size, x_tmp_0);
+                sub_imm(reg_coff_max, reg_coff_max,
+                        vlen * ch_blk_size, X_TMP_0);
                 b(ch_unroll_label[ch_idx]);
             }
         }
         L(ch_unroll_label[0]);
 
         // comeback
-        mov(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max_bwd_copy)));
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_scale_shift,
-                x_tmp_1);
-        ldr(XReg(IDX(reg_diff_scale_shift)), ptr(x_tmp_0));
+        mov(reg_coff_max, reg_coff_max_bwd_copy);
+        add_imm(X_TMP_0, rsp, (int)stack_off_diff_scale_shift,
+                X_TMP_1);
+        ldr(reg_diff_scale_shift, ptr(X_TMP_0));
 
-        //if (is_bf16_) shr(reg_coff_max, 1);
-        sub(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                XReg(IDX(reg_coff_max)));
+        sub(reg_diff_dst, reg_diff_dst,
+                reg_coff_max);
         if (!bdesc_->use_global_stats())
-            sub(XReg(IDX(reg_src)), XReg(IDX(reg_src)),
-                    XReg(IDX(reg_coff_max)));
-        sub(XReg(IDX(reg_diff_src)), XReg(IDX(reg_diff_src)),
-                XReg(IDX(reg_coff_max)));
-        //if (is_bf16_) shl(reg_coff_max, 1);
+            sub(reg_src, reg_src,
+                    reg_coff_max);
+        sub(reg_diff_src, reg_diff_src,
+                reg_coff_max);
 
-        lsr(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
-        sub(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), XReg(IDX(reg_coff_max)));
-        lsl(XReg(IDX(reg_coff_max)), XReg(IDX(reg_coff_max)), 5 % 64);
+        lsr(reg_coff_max, reg_coff_max, 5 % 64);
+        sub(reg_ws, reg_ws, reg_coff_max);
+        lsl(reg_coff_max, reg_coff_max, 5 % 64);
     }
 
     void backward() {
         uni_eor(TReg(0), TReg(0), TReg(0));
-        eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+        eor(reg_coff, reg_coff, reg_coff);
         Label zero_rbuf, sh_spatial;
 
         L(zero_rbuf);
         {
-            add(x_tmp_0, XReg(IDX(reg_rbuf1)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
-            add(x_tmp_0, XReg(IDX(reg_rbuf2)), XReg(IDX(reg_coff)));
-            uni_str(x_tmp_0, TReg(0));
+            add(X_TMP_0, reg_rbuf1, reg_coff);
+            uni_str(TReg(0), X_TMP_0);
+            add(X_TMP_0, reg_rbuf2, reg_coff);
+            uni_str(TReg(0), X_TMP_0);
             if (isa == sve_512)
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                        x_tmp_0);
+                add_imm(reg_coff, reg_coff, vlen,
+                        X_TMP_0);
             else
-                add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
-                        x_tmp_0);
-            cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                add_imm(reg_coff, reg_coff, vlen / 2,
+                        X_TMP_0);
+            cmp(reg_coff, reg_coff_max);
             b(NE, zero_rbuf);
         }
 
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-        ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_dst, x_tmp_1);
-        ldr(XReg(IDX(reg_diff_dst)), ptr(x_tmp_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+        ldr(reg_src, ptr(X_TMP_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_diff_dst, X_TMP_1);
+        ldr(reg_diff_dst, ptr(X_TMP_0));
         if (with_relu) {
             assert(isa == sve_512);
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
-            ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_ws, X_TMP_1);
+            ldr(reg_ws, ptr(X_TMP_0));
         }
 
-        eor(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), XReg(IDX(reg_soff)));
+        eor(reg_soff, reg_soff, reg_soff);
         L(sh_spatial);
         {
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            eor(reg_coff, reg_coff, reg_coff);
             if (isa == asimd) mov(reg_tmp_off, reg_soff);
             is_nspc_ ? backward_sh_channels_nspc() : backward_sh_channels();
             if (isa == asimd) {
@@ -2105,111 +1939,109 @@ struct jit_bnorm_t : public jit_generator {
             if (is_nspc_) {
                 // Can use static offset since we comeback after spatial loop
                 if (mb_offt) {
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), mb_offt,
-                            x_tmp_0);
-                    add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                            mb_offt, x_tmp_0);
-                    add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_src, reg_src, mb_offt,
+                            X_TMP_0);
+                    add_imm(reg_diff_dst, reg_diff_dst,
+                            mb_offt, X_TMP_0);
+                    add_imm(reg_soff, reg_soff, mb_offt,
+                            X_TMP_0);
                 }
                 if (ws_mb_offt) {
-                    add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), ws_mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_ws, reg_ws, ws_mb_offt,
+                            X_TMP_0);
                 }
             } else {
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        XReg(IDX(reg_mb_stride_Bc)));
+                add(reg_soff, reg_soff,
+                        reg_mb_stride_Bc);
             }
-            cmp(XReg(IDX(reg_soff)), XReg(IDX(reg_soff_max)));
+            cmp(reg_soff, reg_soff_max);
             b(LT, sh_spatial);
         }
 
         if (is_nspc_) {
             // comeback
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-            ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_dst, x_tmp_1);
-            ldr(XReg(IDX(reg_diff_dst)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+            ldr(reg_src, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_diff_dst, X_TMP_1);
+            ldr(reg_diff_dst, ptr(X_TMP_0));
         }
 
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_scale_shift,
-                x_tmp_1);
-        ldr(XReg(IDX(reg_diff_scale_shift)), ptr(x_tmp_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_diff_scale_shift,
+                X_TMP_1);
+        ldr(reg_diff_scale_shift, ptr(X_TMP_0));
 
         Label no_sh_reduction;
         barrier();
         {
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_ithr, x_tmp_1);
-            ldr(XReg(IDX(reg_tmp)), ptr(x_tmp_0));
-            cmp(XReg(IDX(reg_tmp)), 0);
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_ithr, X_TMP_1);
+            ldr(reg_tmp, ptr(X_TMP_0));
+            cmp(reg_tmp, 0);
             Label sh_reduction_channels;
             b(NE, no_sh_reduction);
 
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_N_nthr, x_tmp_1);
-            ldr(XReg(IDX(reg_nnthr)), ptr(x_tmp_0));
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            add_imm(X_TMP_0, rsp, (int)stack_off_N_nthr, X_TMP_1);
+            ldr(reg_nnthr, ptr(X_TMP_0));
+            eor(reg_coff, reg_coff, reg_coff);
             L(sh_reduction_channels);
             {
-                mov(XReg(IDX(reg_roff)), XReg(IDX(reg_coff)));
+                mov(reg_roff, reg_coff);
                 uni_eor(TReg(0), TReg(0), TReg(0));
                 uni_eor(TReg(1), TReg(1), TReg(1));
                 uni_load_maybe_tail(vsqrtvar, var_ptr());
-                fadd(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)),
-                        TRegS(IDX(veps)));
-                uni_fsqrt(TRegS(IDX(vsqrtvar)), TRegS(IDX(vsqrtvar)));
-                uni_fdiv(TRegS(IDX(vsqrtvar)), TRegS(IDX(vone)),
-                        TRegS(IDX(vsqrtvar)));
-                mov(XReg(IDX(reg_ctr)), XReg(IDX(reg_nnthr)));
+		fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+		uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+		uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
+                mov(reg_ctr, reg_nnthr);
                 Label sh_reduction_thrs;
                 L(sh_reduction_thrs);
                 { // TODO: unroll (?)
                     XReg x_roff(IDX(reg_roff));
 
-                    add(x_tmp_0, XReg(IDX(reg_rbuf1)), x_roff);
-                    add(x_tmp_1, XReg(IDX(reg_rbuf2)), x_roff);
+                    add(X_TMP_0, reg_rbuf1, x_roff);
+                    add(X_TMP_1, reg_rbuf2, x_roff);
                     if (isa == sve_512) {
-                        ld1w(ZRegS(IDX(z_tmp0)), p_512 / T_z, ptr(x_tmp_0));
-                        ld1w(ZRegS(IDX(z_tmp1)), p_512 / T_z, ptr(x_tmp_1));
+                        ld1w(ZRegS(IDX(t_tmp0)), p_512 / T_z, ptr(X_TMP_0));
+                        ld1w(ZRegS(IDX(t_tmp1)), p_512 / T_z, ptr(X_TMP_1));
                     } else {
-                        ld1(VReg4S(tmp_vec_idx[0]), ptr(x_tmp_0));
-                        ld1(VReg4S(tmp_vec_idx[1]), ptr(x_tmp_1));
+                        ld1(VReg4S(tmp_vec_idx[0]), ptr(X_TMP_0));
+                        ld1(VReg4S(tmp_vec_idx[1]), ptr(X_TMP_1));
                     }
                     fadd(TRegS(0), TRegS(0), TRegS(tmp_vec_idx[0]));
                     fadd(TRegS(1), TRegS(1), TRegS(tmp_vec_idx[1]));
-                    add(XReg(IDX(reg_roff)), XReg(IDX(reg_roff)),
-                            XReg(IDX(reg_coff_max)));
-                    sub_imm(XReg(IDX(reg_ctr)), XReg(IDX(reg_ctr)), 1, x_tmp_0);
-                    cbnz(XReg(IDX(reg_ctr)), sh_reduction_thrs);
+                    add(reg_roff, reg_roff,
+                            reg_coff_max);
+                    sub_imm(reg_ctr, reg_ctr, 1, X_TMP_0);
+                    cbnz(reg_ctr, sh_reduction_thrs);
                 }
-                fmul(TRegS(0), TRegS(0), TRegS(IDX(vsqrtvar)));
+                fmul(TRegS(0), TRegS(0), vsqrtvar.s);
                 uni_store_maybe_tail(diff_gamma_ptr(), TReg(0));
                 uni_store_maybe_tail(diff_beta_ptr(), TReg(1));
                 if (isa == sve_512)
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen,
-                            x_tmp_0);
+                    add_imm(reg_coff, reg_coff, vlen,
+                            X_TMP_0);
                 else
-                    add_imm(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), vlen / 2,
-                            x_tmp_0);
-                cmp(XReg(IDX(reg_coff)), XReg(IDX(reg_coff_max)));
+                    add_imm(reg_coff, reg_coff, vlen / 2,
+                            X_TMP_0);
+                cmp(reg_coff, reg_coff_max);
                 b(NE, sh_reduction_channels);
             }
         }
         L(no_sh_reduction);
         barrier();
 
-        add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_src, x_tmp_1);
-        ldr(XReg(IDX(reg_diff_src)), ptr(x_tmp_0));
+        add_imm(X_TMP_0, rsp, (int)stack_off_diff_src, X_TMP_1);
+        ldr(reg_diff_src, ptr(X_TMP_0));
         if (with_relu) {
             assert(isa == sve_512);
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
-            ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_ws, X_TMP_1);
+            ldr(reg_ws, ptr(X_TMP_0));
         }
 
-        eor(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), XReg(IDX(reg_soff)));
+        eor(reg_soff, reg_soff, reg_soff);
         Label diff_spatial;
         L(diff_spatial);
         {
-            eor(XReg(IDX(reg_coff)), XReg(IDX(reg_coff)), XReg(IDX(reg_coff)));
+            eor(reg_coff, reg_coff, reg_coff);
             if (isa == asimd) mov(reg_tmp_off, reg_soff);
             is_nspc_ ? backward_diff_channels_nspc() : backward_diff_channels();
             if (isa == asimd) {
@@ -2227,39 +2059,39 @@ struct jit_bnorm_t : public jit_generator {
             if (is_nspc_) {
                 // Can use static offset since we comeback after spatial loop
                 if (!bdesc_->use_global_stats() && mb_offt)
-                    add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_src, reg_src, mb_offt,
+                            X_TMP_0);
                 if (mb_offt) {
-                    add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                            mb_offt, x_tmp_0);
-                    add_imm(XReg(IDX(reg_diff_src)), XReg(IDX(reg_diff_src)),
-                            mb_offt, x_tmp_0);
-                    add_imm(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)), mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_diff_dst, reg_diff_dst,
+                            mb_offt, X_TMP_0);
+                    add_imm(reg_diff_src, reg_diff_src,
+                            mb_offt, X_TMP_0);
+                    add_imm(reg_soff, reg_soff, mb_offt,
+                            X_TMP_0);
                 }
                 if (ws_mb_offt)
-                    add_imm(XReg(IDX(reg_ws)), XReg(IDX(reg_ws)), ws_mb_offt,
-                            x_tmp_0);
+                    add_imm(reg_ws, reg_ws, ws_mb_offt,
+                            X_TMP_0);
             } else {
-                add(XReg(IDX(reg_soff)), XReg(IDX(reg_soff)),
-                        XReg(IDX(reg_mb_stride_Bc)));
+                add(reg_soff, reg_soff,
+                        reg_mb_stride_Bc);
             }
-            cmp(XReg(IDX(reg_soff)), XReg(IDX(reg_soff_max)));
+            cmp(reg_soff, reg_soff_max);
             b(LT, diff_spatial);
         }
         if (is_nspc_) {
             // comeback
             if (!bdesc_->use_global_stats()) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_src, x_tmp_1);
-                ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_src, X_TMP_1);
+                ldr(reg_src, ptr(X_TMP_0));
             }
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_dst, x_tmp_1);
-            ldr(XReg(IDX(reg_diff_dst)), ptr(x_tmp_0));
-            add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_diff_src, x_tmp_1);
-            ldr(XReg(IDX(reg_diff_src)), ptr(x_tmp_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_diff_dst, X_TMP_1);
+            ldr(reg_diff_dst, ptr(X_TMP_0));
+            add_imm(X_TMP_0, rsp, (int)stack_off_diff_src, X_TMP_1);
+            ldr(reg_diff_src, ptr(X_TMP_0));
             if (with_relu) {
-                add_imm(x_tmp_0, XReg(IDX(rsp)), (int)stack_off_ws, x_tmp_1);
-                ldr(XReg(IDX(reg_ws)), ptr(x_tmp_0));
+                add_imm(X_TMP_0, rsp, (int)stack_off_ws, X_TMP_1);
+                ldr(reg_ws, ptr(X_TMP_0));
             }
         }
     }
@@ -2287,27 +2119,17 @@ struct jit_bnorm_t : public jit_generator {
     void generate() override {
         preamble();
 
-#if 0
-        if (is_bf16_) {
-            // init emulation of bfloat16 operations
-            if (!mayiuse(avx512_core_bf16)) {
-                bf16_emu_ = new bf16_emulation_t(this, bf16_emu_reserved_1,
-                        bf16_emu_reserved_2, bf16_emu_reserved_3, reg_bf16_tmp,
-                        bf16_emu_reserved_4, bf16_emu_reserved_4);
-                bf16_emu_->init_vcvtneps2bf16();
-            }
+        mov(XReg(DUMMY_IDX), 0);
+
+        if (isa == sve_512) {
+            ptrue(p_512.b);
+
+            prepare_tail_mask_sve_512();
         }
-#endif // #if 0
-
-        ptrue(p_512.b);
-        ptrue(p_lsb_256.b, VL32);
-        ptrue(p_lsb_128.b, VL16);
-
-        if (isa == sve_512) prepare_tail_mask_avx512_common();
 
         compute_static_strides();
-        sub_imm(XReg(IDX(rsp)), XReg(IDX(rsp)), (int)stack_size_required,
-                x_tmp_0);
+        sub_imm(rsp, rsp, (int)stack_size_required,
+                X_TMP_0);
         load_common_params();
         prepare_relu();
 
@@ -2317,8 +2139,8 @@ struct jit_bnorm_t : public jit_generator {
         } else {
             backward();
         }
-        add_imm(XReg(IDX(rsp)), XReg(IDX(rsp)), (int)stack_size_required,
-                x_tmp_0);
+        add_imm(rsp, rsp, (int)stack_size_required,
+                X_TMP_0);
         postamble();
     }
 
