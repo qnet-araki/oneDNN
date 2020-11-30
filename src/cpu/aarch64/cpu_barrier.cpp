@@ -30,7 +30,6 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
         Xbyak_aarch64::XReg reg_nthr) {
 #define BAR_CTR_OFF offsetof(ctx_t, ctr)
 #define BAR_SENSE_OFF offsetof(ctx_t, sense)
-#define IDX(a) static_cast<uint32_t>(a.getIdx())
     using namespace Xbyak_aarch64;
 
     XReg reg_tmp = [&]() {
@@ -42,60 +41,58 @@ void generate(jit_generator &code, Xbyak_aarch64::XReg reg_ctx,
         return XReg(0); /* should not happen */
     }();
 
-    const XReg x_tmp_0 = code.X_TMP_0;
-    const XReg x_tmp_1 = code.X_TMP_1;
-    const XReg x_tmp_2 = code.X_TMP_2;
-    const XReg x_tmp_sp = code.X_TMP_3;
-    const XReg sp = code.sp;
-
     Label barrier_exit_label, barrier_exit_restore_label, spin_label;
 
-    code.mov(x_tmp_sp, sp);
+    code.mov(code.X_TMP_3, code.sp);
     code.cmp(reg_nthr, 1);
     code.b(EQ, barrier_exit_label);
 
-    code.sub(x_tmp_sp, x_tmp_sp, 8);
-    code.str(reg_tmp, ptr(x_tmp_sp));
+    code.sub(code.X_TMP_3, code.X_TMP_3, 8);
+    code.str(reg_tmp, ptr(code.X_TMP_3));
 
     /* take and save current sense */
-    code.add_imm(x_tmp_0, reg_ctx, BAR_SENSE_OFF, x_tmp_0);
-    code.ldr(reg_tmp, ptr(x_tmp_0));
-    code.sub(x_tmp_sp, x_tmp_sp, 8);
-    code.str(reg_tmp, ptr(x_tmp_sp));
+    code.add_imm(code.X_TMP_0, reg_ctx, BAR_SENSE_OFF, code.X_TMP_0);
+    code.ldr(reg_tmp, ptr(code.X_TMP_0));
+    code.sub(code.X_TMP_3, code.X_TMP_3, 8);
+    code.str(reg_tmp, ptr(code.X_TMP_3));
     code.mov(reg_tmp, 1);
 
-    code.add_imm(x_tmp_1, reg_ctx, BAR_CTR_OFF, x_tmp_2);
-    code.ldaddal(reg_tmp, reg_tmp, ptr(x_tmp_1));
+    code.add_imm(code.X_TMP_1, reg_ctx, BAR_CTR_OFF, code.X_TMP_2);
+    if (mayiuse(sve_512)) {
+        code.prfm(PLDL1KEEP, ptr(code.X_TMP_1));
+        code.prfm(PLDL1KEEP, ptr(code.X_TMP_1));
+    }
+
+    code.ldaddal(reg_tmp, reg_tmp, ptr(code.X_TMP_1));
     code.add(reg_tmp, reg_tmp, 1);
     code.cmp(reg_tmp, reg_nthr);
-    code.ldr(reg_tmp, ptr(x_tmp_sp));
-    code.add(x_tmp_sp, x_tmp_sp, 8);
+    code.ldr(reg_tmp, ptr(code.X_TMP_3));
+    code.add(code.X_TMP_3, code.X_TMP_3, 8);
     code.b(NE, spin_label);
 
     /* the last thread {{{ */
-    code.mov_imm(x_tmp_2, 0);
-    code.str(x_tmp_2, ptr(x_tmp_1));
+    code.mov_imm(code.X_TMP_2, 0);
+    code.str(code.X_TMP_2, ptr(code.X_TMP_1));
 
     // notify waiting threads
     code.mvn(reg_tmp, reg_tmp);
-    code.str(reg_tmp, ptr(x_tmp_0));
+    code.str(reg_tmp, ptr(code.X_TMP_0));
     code.b(barrier_exit_restore_label);
     /* }}} the last thread */
 
-    code.CodeGenerator::L(spin_label);
-    code.ldr(x_tmp_1, ptr(x_tmp_0));
-    code.cmp(reg_tmp, x_tmp_1);
+    code.L(spin_label);
+    code.ldr(code.X_TMP_1, ptr(code.X_TMP_0));
+    code.cmp(reg_tmp, code.X_TMP_1);
     code.b(EQ, spin_label);
 
-    //#ifdef DNNL_INDIRECT_JIT_AARCH64
-    code.CodeGenerator::dmb(ISH);
-    //#endif //#ifdef DNNL_INDIRECT_JIT_AARCH64
+    code.dmb(ISH);
 
-    code.CodeGenerator::L(barrier_exit_restore_label);
-    code.ldr(reg_tmp, ptr(x_tmp_sp));
-    code.add(x_tmp_sp, x_tmp_sp, 8);
+    code.L(barrier_exit_restore_label);
+    code.ldr(reg_tmp, ptr(code.X_TMP_3));
+    code.add(code.X_TMP_3, code.X_TMP_3, 8);
 
-    code.CodeGenerator::L(barrier_exit_label);
+    code.L(barrier_exit_label);
+
 #undef BAR_CTR_OFF
 #undef BAR_SENSE_OFF
 }
