@@ -1237,6 +1237,7 @@ template struct jit_uni_pooling_bwd_t<avx512_core, data_type::f32>;
 template struct jit_uni_pooling_fwd_t<avx512_core, data_type::bf16>;
 template struct jit_uni_pooling_bwd_t<avx512_core, data_type::bf16>;
 */
+#if 0 // kawakami
 template struct jit_uni_pooling_fwd_t<asimd, data_type::f32>;
 template struct jit_uni_pooling_bwd_t<asimd, data_type::f32>;
 template struct jit_uni_pooling_fwd_t<sve_128, data_type::f32>;
@@ -1245,6 +1246,7 @@ template struct jit_uni_pooling_fwd_t<sve_256, data_type::f32>;
 template struct jit_uni_pooling_bwd_t<sve_256, data_type::f32>;
 template struct jit_uni_pooling_fwd_t<sve_512, data_type::f32>;
 template struct jit_uni_pooling_bwd_t<sve_512, data_type::f32>;
+#endif //#if 0 // kawakami
 
 } // namespace aarch64
 } // namespace cpu

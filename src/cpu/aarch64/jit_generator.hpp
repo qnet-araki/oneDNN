@@ -118,6 +118,7 @@ public:
     Xbyak_aarch64::XReg X_TMP_4 = x27;
     Xbyak_aarch64::XReg X_TMP_ADDR = x28;
     const Xbyak_aarch64::XReg X_DEFAULT_ADDR = x28;
+    const Xbyak_aarch64::XReg X_SP = x4;
     Xbyak_aarch64::PReg P_TMP = p0;
     Xbyak_aarch64::PReg P_TMP_0 = p11;
     Xbyak_aarch64::PReg P_TMP_1 = p12;
