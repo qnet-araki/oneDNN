@@ -55,35 +55,35 @@ jit_uni_pool_kernel<isa>::jit_uni_pool_kernel(
 
         if (jpp.with_postops) {
 
-        static constexpr bool use_per_oc_spatial_strategy = false;
-        static constexpr bool preserve_gpr = true;
-        static constexpr bool preserve_vmm = true;
-        static constexpr bool use_exact_tail_scalar_bcast = false;
-        static constexpr int sse41_single_block_size
-	  //                = cpu_isa_traits<sse41>::vlen / sizeof(float);
-                = cpu_isa_traits<asimd>::vlen / sizeof(float);	
-        size_t postop_tail = static_cast<size_t>(jpp.c_tail);
-	//        const bool high_half_block_empty = isa == sse41
-        const bool high_half_block_empty = isa == asimd	
-                && static_cast<size_t>(jpp.c_tail) > sse41_single_block_size;
-        if (high_half_block_empty) postop_tail -= sse41_single_block_size;
+            static constexpr bool use_per_oc_spatial_strategy = false;
+            static constexpr bool preserve_gpr = true;
+            static constexpr bool preserve_vmm = true;
+            static constexpr bool use_exact_tail_scalar_bcast = false;
+            static constexpr int sse41_single_block_size
+                    //                = cpu_isa_traits<sse41>::vlen / sizeof(float);
+                    = cpu_isa_traits<asimd>::vlen / sizeof(float);
+            size_t postop_tail = static_cast<size_t>(jpp.c_tail);
+            //        const bool high_half_block_empty = isa == sse41
+            const bool high_half_block_empty = isa == asimd
+                    && static_cast<size_t>(jpp.c_tail)
+                            > sse41_single_block_size;
+            if (high_half_block_empty) postop_tail -= sse41_single_block_size;
 
-        const binary_injector::rhs_arg_static_params_t rhs_sp {
-							       //static_cast<std::size_t>(this->xmm4.getIdx()), this->rax,
-							       static_cast<std::size_t>(VReg(4).getIdx()), XReg(0),
-							       //this->rdx, preserve_gpr, preserve_vmm,
-							       XReg(2), preserve_gpr, preserve_vmm,
-                GET_OFF(post_ops_binary_rhs_arg_vec),
-                memory_desc_wrapper(*dst_md), postop_tail, k_c_tail_mask,
-                use_exact_tail_scalar_bcast};
+            const binary_injector::rhs_arg_static_params_t rhs_sp {
+                    //static_cast<std::size_t>(this->xmm4.getIdx()), this->rax,
+                    static_cast<std::size_t>(VReg(4).getIdx()), XReg(0),
+                    //this->rdx, preserve_gpr, preserve_vmm,
+                    XReg(2), preserve_gpr, preserve_vmm,
+                    GET_OFF(post_ops_binary_rhs_arg_vec),
+                    memory_desc_wrapper(*dst_md), postop_tail, k_c_tail_mask,
+                    use_exact_tail_scalar_bcast};
 
-        const binary_injector::static_params_t bsp {
-                reg_param, use_per_oc_spatial_strategy, rhs_sp};
+            const binary_injector::static_params_t bsp {
+                    reg_param, use_per_oc_spatial_strategy, rhs_sp};
 
-        postops_injector_
-                = utils::make_unique<injector::jit_uni_postops_injector_t<isa>>(
-                        this, jpp.post_ops, bsp);
-
+            postops_injector_ = utils::make_unique<
+                    injector::jit_uni_postops_injector_t<isa>>(
+                    this, jpp.post_ops, bsp);
         }
 }
 
@@ -692,29 +692,30 @@ bool jit_uni_pool_kernel<isa>::post_ops_ok(jit_pool_conf_t &jpp,
 template <cpu_isa_t isa>
 void jit_uni_pool_kernel<isa>::apply_postops(int ur_bc, int ur_w, int c_block,
         const std::function<bool(int)> &is_tail_predicate) {
-  //assert(!"unreachable");
+    //assert(!"unreachable");
 
     binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
     const int end_idx = vmm_idx_upper_bound() + 1;
     const int start_idx = end_idx - (ur_bc * ur_w);
     const bool sse41_postops_disabled
-      //= isa == sse41 && disable_postops_when_sse_high_half_processed_;
+            //= isa == sse41 && disable_postops_when_sse_high_half_processed_;
             = isa == asimd && disable_postops_when_sse_high_half_processed_;
 
     if (jpp.with_binary && !sse41_postops_disabled) {
 
         static constexpr int sse41_simd_w
-	  //                = cpu_isa_traits<sse41>::vlen / sizeof(float);
-                = cpu_isa_traits<asimd>::vlen / sizeof(float);	
+                //                = cpu_isa_traits<sse41>::vlen / sizeof(float);
+                = cpu_isa_traits<asimd>::vlen / sizeof(float);
         const int sse_elem_off = sse_high_half ? sse41_simd_w : 0;
         for (int jj = 0; jj < ur_w; jj++) {
             for (int bci = 0; bci < ur_bc; bci++) {
                 const auto vmm_idx
                         = vreg(reg_ind(0, bci, jj, ur_bc, ur_w)).getIdx();
-		add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(c_elem_off), x_tmp_0);
+                add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(c_elem_off),
+                        x_tmp_0);
                 rhs_arg_params.vmm_idx_to_oc_elem_off_addr.emplace(
-								   //vmm_idx, ptr[reg_param + GET_OFF(c_elem_off)]);
-								   vmm_idx, ptr(x_tmp_addr));
+                        //vmm_idx, ptr[reg_param + GET_OFF(c_elem_off)]);
+                        vmm_idx, ptr(x_tmp_addr));
                 rhs_arg_params.vmm_idx_to_oc_elem_off_val.emplace(
                         vmm_idx, bci * c_block + sse_elem_off);
                 if (is_tail_predicate && is_tail_predicate(bci))
@@ -723,7 +724,6 @@ void jit_uni_pool_kernel<isa>::apply_postops(int ur_bc, int ur_w, int c_block,
         }
     }
     postops_injector_->compute_vector_range(start_idx, end_idx, rhs_arg_params);
-
 }
 
 template <cpu_isa_t isa>
@@ -2574,14 +2574,13 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                     uzp1(p_tmp0.b, PRegB(IDX(k_c_tail_mask)), p_tmp1.b);
                     // 16-bit context -> 8-bit conext
                     uzp1(p_tmp0.b, p_tmp0.b, p_tmp1.b);
-                    add_imm(X_DEFAULT_ADDR, XReg(IDX(reg_index)),
-                            step_index, X_TMP_0);
-                    ld1b(z_indvr.b, p_tmp0 / T_z,
-                            ptr(X_DEFAULT_ADDR));
+                    add_imm(X_DEFAULT_ADDR, XReg(IDX(reg_index)), step_index,
+                            X_TMP_0);
+                    ld1b(z_indvr.b, p_tmp0 / T_z, ptr(X_DEFAULT_ADDR));
                     zip1(z_indvr.b, z_indvr.b, z_tmp0.b);
                     zip1(z_indvr.h, z_indvr.h, z_tmp0.h);
-                    uxtb(ZRegS(IDX(indvr)),
-                            PReg(IDX(k_c_tail_mask)) / T_m, z_indvr.s);
+                    uxtb(ZRegS(IDX(indvr)), PReg(IDX(k_c_tail_mask)) / T_m,
+                            z_indvr.s);
 
                 } else {
                     /* get mem address */
@@ -2943,14 +2942,14 @@ void jit_uni_pool_kernel<isa>::zero_diff_src(
     ldr(XReg(IDX(reg_zero_ptr)), ptr(x_tmp_addr));
 
     int vlen = cpu_isa_traits<isa>::vlen;
-    if(vlen == 64){
-      using Vmm = typename Xbyak_aarch64::ZReg;
-    }else if(vlen == 32){
-      using Vmm = typename Xbyak_aarch64::ZReg;
-    }else if(vlen == 16){
-      using Vmm = typename Xbyak_aarch64::VReg;
-    }else{
-      assert(!"unreachable");
+    if (vlen == 64) {
+        using Vmm = typename Xbyak_aarch64::ZReg;
+    } else if (vlen == 32) {
+        using Vmm = typename Xbyak_aarch64::ZReg;
+    } else if (vlen == 16) {
+        using Vmm = typename Xbyak_aarch64::VReg;
+    } else {
+        assert(!"unreachable");
     }
     Vmm vzero = vmm_tmp;
     //VReg vzero = vmm_tmp
@@ -3332,10 +3331,12 @@ void jit_uni_pool_kernel<isa>::generate() {
 }
 
 //template struct jit_uni_pool_kernel<sse41>;
+#if 0 // kawakami
 template struct jit_uni_pool_kernel<asimd>;
 template struct jit_uni_pool_kernel<sve_128>;
 template struct jit_uni_pool_kernel<sve_256>;
 template struct jit_uni_pool_kernel<sve_512>;
+#endif //#if 0 // kawakami
 /*
 template struct jit_uni_pool_kernel<avx>;
 template struct jit_uni_pool_kernel<avx2>;
