@@ -197,12 +197,18 @@ public:
         fsub(z1, z2, z3);
     }
 
-    void uni_eor(const Xbyak_aarch64::VReg &v1, const Xbyak_aarch64::VReg &v2, const Xbyak_aarch64::VReg &v3) {
-        eor(Xbyak_aarch64::VReg16B(v1.getIdx()), Xbyak_aarch64::VReg16B(v2.getIdx()), Xbyak_aarch64::VReg16B(v3.getIdx()));
+    void uni_eor(const Xbyak_aarch64::VReg &v1, const Xbyak_aarch64::VReg &v2,
+            const Xbyak_aarch64::VReg &v3) {
+        eor(Xbyak_aarch64::VReg16B(v1.getIdx()),
+                Xbyak_aarch64::VReg16B(v2.getIdx()),
+                Xbyak_aarch64::VReg16B(v3.getIdx()));
     }
 
-    void uni_eor(const Xbyak_aarch64::ZReg &z1, const Xbyak_aarch64::ZReg &z2, const Xbyak_aarch64::ZReg &z3) {
-        eor(Xbyak_aarch64::ZRegD(z1.getIdx()), Xbyak_aarch64::ZRegD(z2.getIdx()), Xbyak_aarch64::ZRegD(z3.getIdx()));
+    void uni_eor(const Xbyak_aarch64::ZReg &z1, const Xbyak_aarch64::ZReg &z2,
+            const Xbyak_aarch64::ZReg &z3) {
+        eor(Xbyak_aarch64::ZRegD(z1.getIdx()),
+                Xbyak_aarch64::ZRegD(z2.getIdx()),
+                Xbyak_aarch64::ZRegD(z3.getIdx()));
     }
 
     /*
