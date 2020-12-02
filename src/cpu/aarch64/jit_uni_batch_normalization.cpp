@@ -150,7 +150,7 @@ struct jit_bnorm_t : public jit_generator {
     TReg t_tmp0 = TReg(31);
     TReg t_tmp1 = vbuf;
 
-    const std::vector<uint32_t> tmp_vec_idx = {31, 20}; 
+    const std::vector<uint32_t> tmp_vec_idx = {31, 20};
 
     const std::vector<TReg> t_tmp_vec = {t_tmp0, t_tmp1};
 
@@ -444,7 +444,7 @@ struct jit_bnorm_t : public jit_generator {
             b(l_ret);
         }
         L(l_no_mask);
-	uni_ldr(t, x);
+        uni_ldr(t, x);
         L(l_ret);
     }
 
@@ -457,7 +457,7 @@ struct jit_bnorm_t : public jit_generator {
             b(l_ret);
         }
         L(l_no_mask);
-	uni_str(t, x);
+        uni_str(t, x);
         L(l_ret);
     }
 
@@ -674,7 +674,7 @@ struct jit_bnorm_t : public jit_generator {
                         add(X_TMP_0, reg_src, reg_soff);
                         if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
                         uni_load_spat_data(v1, X_TMP_0);
-			fadd(v0.s, v0.s, v1.s);
+                        fadd(v0.s, v0.s, v1.s);
                         add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t0_pf_offt)
                             add_imm(X_TMP_0, X_TMP_0, offt + t0_pf_offt,
@@ -690,7 +690,7 @@ struct jit_bnorm_t : public jit_generator {
                         TReg b = TReg(0);
                         TReg v = TReg(base_reg * 2);
                         if (base_reg)
-			    fadd(b.s, b.s, v.s);
+                            fadd(b.s, b.s, v.s);
                     });
             add(X_TMP_0, reg_rbuf1, reg_coff);
             uni_str(TReg(0), X_TMP_0);
@@ -818,8 +818,8 @@ struct jit_bnorm_t : public jit_generator {
                 for (int idx = 0; idx < num_ch_blks; ++idx) {
                     uni_load_maybe_tail(vmean, mean_ptr(coff));
                     uni_load_maybe_tail(vsqrtvar, var_ptr(coff));
-		    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
-		    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+                    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+                    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
 
                     if (bdesc_->use_scaleshift()) {
                         uni_load_maybe_tail(vgamma, gamma_ptr(coff));
@@ -829,7 +829,7 @@ struct jit_bnorm_t : public jit_generator {
                     TReg vscale = bdesc_->use_scaleshift() ? vgamma : vone;
                     TReg vdiv = bdesc_->use_scaleshift() ? vgamma : vsqrtvar;
 
-		    uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
+                    uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
 
                     add(X_TMP_0, reg_src, reg_soff_nspc);
                     if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
@@ -949,7 +949,7 @@ struct jit_bnorm_t : public jit_generator {
                         add(X_TMP_0, reg_src, reg_soff);
                         if (offt) add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
                         uni_load_spat_data(TReg(IDX(vtmp0)), X_TMP_0);
-			uni_fsub(vtmp1, t_mean, vtmp0);
+                        uni_fsub(vtmp1, t_mean, vtmp0);
                         uni_fmla(v, vtmp1, vtmp1);
                         add(X_TMP_0, reg_src, reg_soff);
                         if (offt || t0_pf_offt)
@@ -967,7 +967,7 @@ struct jit_bnorm_t : public jit_generator {
                         TReg b = TReg(0);
                         TReg v = TReg(base_reg * 3);
                         if (base_reg)
-			    fadd(b.s, b.s, v.s);
+                            fadd(b.s, b.s, v.s);
                     });
             add(X_TMP_0, reg_rbuf1, reg_coff);
             uni_str(TReg(0), X_TMP_0);
@@ -1061,8 +1061,8 @@ struct jit_bnorm_t : public jit_generator {
                 L(mean_reduction_thrs);
                 {
                     add(X_TMP_0, reg_rbuf1, reg_roff);
-		    uni_ldr(t_tmp0, X_TMP_0);
-		    fadd(TRegS(1), TRegS(1), t_tmp0.s);
+                    uni_ldr(t_tmp0, X_TMP_0);
+                    fadd(TRegS(1), TRegS(1), t_tmp0.s);
 
                     add(X_TMP_0, reg_rbuf1, reg_roff);
                     uni_str(TReg(0), X_TMP_0);
@@ -1157,8 +1157,8 @@ struct jit_bnorm_t : public jit_generator {
                 L(var_reduction_thrs);
                 { // TODO: unroll (?)
                     add(X_TMP_0, reg_rbuf1, reg_roff);
-		    uni_ldr(t_tmp0, X_TMP_0);
-		    fadd(TRegS(1), TRegS(1), t_tmp0.s);
+                    uni_ldr(t_tmp0, X_TMP_0);
+                    fadd(TRegS(1), TRegS(1), t_tmp0.s);
                     add(reg_roff, reg_roff,
                             reg_coff_max);
                     sub_imm(reg_ctr, reg_ctr, 1, X_TMP_0);
@@ -1191,8 +1191,8 @@ struct jit_bnorm_t : public jit_generator {
         {
             uni_load_maybe_tail(vmean, mean_ptr());
             uni_load_maybe_tail(vsqrtvar, var_ptr());
-	    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
-	    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+            fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+            uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
 
             if (bdesc_->use_scaleshift()) {
                 uni_load_maybe_tail(vgamma, gamma_ptr());
@@ -1202,7 +1202,7 @@ struct jit_bnorm_t : public jit_generator {
             TReg vscale = bdesc_->use_scaleshift() ? vgamma : vone;
             TReg vdiv = bdesc_->use_scaleshift() ? vgamma : vsqrtvar;
 
-	    uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
+            uni_fdiv(vdiv.s, vscale.s, vsqrtvar.s);
 
             auto compute = [=](bool stream_store_allowed) {
                 spat_loop(
@@ -1228,14 +1228,14 @@ struct jit_bnorm_t : public jit_generator {
                                 add_imm(X_TMP_0, X_TMP_0, offt + t1_pf_offt,
                                         X_TMP_1);
                             prfm(PLDL2KEEP, ptr(X_TMP_0));
-			    uni_fsub(v.s, v.s, vmean.s);
+                            uni_fsub(v.s, v.s, vmean.s);
                             if (bdesc_->use_scaleshift()) {
-				uni_fmad(v.s, vgamma.s, vbeta.s, t_tmp0.s);
+                                uni_fmad(v.s, vgamma.s, vbeta.s, t_tmp0.s);
                             } else {
-				fmul(v.s, v.s, vsqrtvar.s);
+                                fmul(v.s, v.s, vsqrtvar.s);
                             }
                             if (with_relu_inf_only) {
-				uni_fmax(v.s, v.s, vzero.s);
+                                uni_fmax(v.s, v.s, vzero.s);
                             } else if (with_relu) {
                                 if (isa == sve_512)
                                     fwd_process_relu_avx512_common(
@@ -1428,14 +1428,14 @@ struct jit_bnorm_t : public jit_generator {
                             else
                                 assert(false);
                         }
-			uni_fsub(t3.s, vmean.s, t1.s);
+                        uni_fsub(t3.s, vmean.s, t1.s);
                         if (isa == asimd) {
-			    fmul(t3.s, t3.s, t2.s);
-			    uni_fsub(o0.s, o0.s, t3.s);
+                            fmul(t3.s, t3.s, t2.s);
+                            uni_fsub(o0.s, o0.s, t3.s);
                         } else {
-			    uni_fmls(o0.s, t3.s, t2.s);
+                            uni_fmls(o0.s, t3.s, t2.s);
                         }
-			fadd(o1.s, o1.s, t2.s);
+                        fadd(o1.s, o1.s, t2.s);
                         add(X_TMP_0, reg_diff_dst,
                                 reg_soff);
                         add(X_TMP_1, reg_src, reg_soff);
@@ -1460,8 +1460,8 @@ struct jit_bnorm_t : public jit_generator {
                         TReg b0 = TReg(0);
                         TReg b1 = TReg(1);
                         if (base_reg) {
-			    fadd(b0.s, b0.s, TRegS(base_reg * 5 + 0));
-			    fadd(b1.s, b1.s, TRegS(base_reg * 5 + 1));
+                            fadd(b0.s, b0.s, TRegS(base_reg * 5 + 0));
+                            fadd(b1.s, b1.s, TRegS(base_reg * 5 + 1));
                         }
                     });
             add(X_TMP_0, reg_rbuf1, reg_coff);
@@ -1608,16 +1608,16 @@ struct jit_bnorm_t : public jit_generator {
         {
             uni_load_maybe_tail(vmean, mean_ptr());
             uni_load_maybe_tail(vsqrtvar, var_ptr());
-	    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
-	    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
-	    uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
+            fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+            uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+            uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
             if (bdesc_->use_scaleshift())
                 uni_load_maybe_tail(vgamma, gamma_ptr());
             uni_load_maybe_tail(vdiff_gamma, diff_gamma_ptr());
             uni_load_maybe_tail(vdiff_beta, diff_beta_ptr());
-	    fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
-	    uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
-	    uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
+            fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
+            uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
+            uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
 
             auto compute = [=](bool stream_store_allowed) {
                 spat_loop(
@@ -1640,19 +1640,19 @@ struct jit_bnorm_t : public jit_generator {
                                     assert(false);
                             }
                             if (!bdesc_->use_global_stats()) {
-				uni_fsub(v.s, v.s, vdiff_beta.s);
+                                uni_fsub(v.s, v.s, vdiff_beta.s);
                                 add(X_TMP_0, reg_src,
                                         reg_soff);
                                 if (offt)
                                     add_imm(X_TMP_0, X_TMP_0, offt, X_TMP_1);
                                 uni_load_spat_data(t, X_TMP_0);
-				uni_fsub(t.s, vmean.s, t.s);
-				fmul(t.s, t.s, vdiff_gamma.s);
-				fadd(v.s, v.s, t.s);
+                                uni_fsub(t.s, vmean.s, t.s);
+                                fmul(t.s, t.s, vdiff_gamma.s);
+                                fadd(v.s, v.s, t.s);
                             }
-			    fmul(v.s, v.s, vsqrtvar.s);
+                            fmul(v.s, v.s, vsqrtvar.s);
                             if (bdesc_->use_scaleshift()) {
-			        fmul(v.s, v.s, vgamma.s);
+                                fmul(v.s, v.s, vgamma.s);
                             }
                             if (stream_store_allowed) {
                                 uni_str(v, reg_diff_src, reg_soff, offt);
@@ -1734,9 +1734,9 @@ struct jit_bnorm_t : public jit_generator {
                     uni_load_maybe_tail(vmean, mean_ptr(coff));
                     uni_load_maybe_tail(vsqrtvar, var_ptr(coff));
 
-		    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
-		    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
-		    uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
+                    fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+                    uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+                    uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
 
                     if (bdesc_->use_scaleshift())
                         uni_load_maybe_tail(vgamma, gamma_ptr(coff));
@@ -1759,9 +1759,9 @@ struct jit_bnorm_t : public jit_generator {
                             X_TMP_1);
                     ldr(reg_ws, ptr(X_TMP_0));
 
-		    fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
-		    uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
-		    uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
+                    fmul(vdiff_gamma.s, vdiff_gamma.s, vsqrtvar.s);
+                    uni_fdiv(vdiff_beta.s, vdiff_beta.s, vchan_size.s);
+                    uni_fdiv(vdiff_gamma.s, vdiff_gamma.s, vchan_size.s);
 
                     add(X_TMP_0, reg_diff_dst,
                             reg_soff_nspc);
@@ -1988,9 +1988,9 @@ struct jit_bnorm_t : public jit_generator {
                 uni_eor(TReg(0), TReg(0), TReg(0));
                 uni_eor(TReg(1), TReg(1), TReg(1));
                 uni_load_maybe_tail(vsqrtvar, var_ptr());
-		fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
-		uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
-		uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
+                fadd(vsqrtvar.s, vsqrtvar.s, veps.s);
+                uni_fsqrt(vsqrtvar.s, vsqrtvar.s);
+                uni_fdiv(vsqrtvar.s, vone.s, vsqrtvar.s);
                 mov(reg_ctr, reg_nnthr);
                 Label sh_reduction_thrs;
                 L(sh_reduction_thrs);
