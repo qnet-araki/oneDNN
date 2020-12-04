@@ -207,7 +207,7 @@ private:
     }
     int simd_w() { return vlen() / dtype_size(); }
 
-    XReg reg_src = x0;
+    XReg reg_src = x11;
     XReg reg_dst = x8;
     XReg reg_injector_table = x9;
     XReg reg_diff_dst = x10;

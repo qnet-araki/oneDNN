@@ -234,6 +234,9 @@ void jit_uni_eltwise_injector_f32<isa>::assign_regs() {
     vmm_aux2 = Vmm(preserved_vec_idxs[2]);
     vmm_aux3 = Vmm(preserved_vec_idxs[3]);
     vmm_aux4 = Vmm(preserved_vec_idxs[4]);
+    vmm_aux5 = Vmm(preserved_vec_idxs[5]);
+    vmm_aux6 = Vmm(preserved_vec_idxs[6]);
+    vmm_aux7 = Vmm(preserved_vec_idxs[7]);
 }
 
 template <cpu_isa_t isa>
@@ -412,10 +415,7 @@ void jit_uni_eltwise_injector_f32<isa>::compute_cmp_mask(
         case ORD_S:
         case FALSE_OS:
         case TRUE_US:
-        default:
-            std::cout << __FILE__ << "," << __LINE__
-                      << "Unsupported compare mode" << std::endl;
-            break;
+        default: assert(!"Unsupported compare mode"); break;
     }
 }
 
@@ -485,16 +485,16 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
     compute_cmp_mask(vmm_src, table_val(exp_ln_flt_min_f), _cmp_lt_os);
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
-    h->fminnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmin(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
+    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(exp_ln_flt_min_f))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_min_f))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     if (vlen != 32) {
         h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
@@ -606,10 +606,10 @@ template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::relu_zero_ns_compute_vector_fwd(
         const Vmm &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(zero))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 }
 
 template <cpu_isa_t isa>
@@ -654,6 +654,26 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
     Vmm vmm_dst = vmm_aux1, vmm_src_shift = vmm_aux1, vmm_coeff = vmm_aux1,
         vmm_pol = vmm_aux2, vmm_indices = vmm_aux3, vmm_src_original = vmm_aux4,
         vmm_sign = vmm_aux4;
+
+    auto vpermt2ps_aarch64 =
+            [&](const ZRegS &d, const ZRegS &s, const ZRegS &s2, const ZRegS &t,
+                    const ZRegS &t2, const ZRegS &t3, const PReg &p) {
+                h->ptrue(p.b);
+                h->mov(t, 0x1f);
+                h->and_(ZRegB(t.getIdx()), p, ZRegB(s.getIdx()));
+                for (int i = 0; i < 16; i++) {
+                    h->cmpeq(h->P_TMP_0.s, p, t, 0);
+                    h->sub(t, 0x1);
+                    h->dup(t2, d[i]);
+                    h->mov(t3, h->P_TMP_0 / T_m, t2);
+                }
+                for (int i = 0; i < 16; i++) {
+                    h->cmpeq(h->P_TMP_0.s, p, t, i);
+                    h->dup(t2, s2[i]);
+                    h->mov(t3, h->P_TMP_0 / T_m, t2);
+                }
+                h->mov(ZRegD(d.getIdx()), ZRegD(t3.getIdx()));
+            };
 
     // We split the positive domain in 33 intervals:
     // a) [0; linear_ubound]: in this interval tanh(x) = x
@@ -708,27 +728,11 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
                         h->mov(ZRegS(IDX(zmm_coeff)), p_tmp0 / T_m, 0);
                     }
 
-                    h->mov(PRegB(IDX(p_tmp1)), h->P_ALL_ONE.b);
-                    h->mov(ZRegS(IDX(z_tmp_0)), 0x1f);
-                    h->and_(ZRegB(IDX(z_tmp_0)), PReg(IDX(p_tmp1)),
-                            ZRegB(IDX(zmm_pol_idx)));
-                    for (int i = 0; i < 16; i++) {
-                        h->cmpeq(p_tmp0.s, PReg(IDX(p_tmp1)),
-                                ZRegS(IDX(z_tmp_0)), 0);
-                        h->sub(ZRegS(IDX(z_tmp_0)), 0x1);
-                        h->dup(ZRegS(IDX(z_tmp_1)), ZRegS(IDX(zmm_coeff))[i]);
-                        h->mov(ZRegS(IDX(z_tmp_2)), p_tmp0 / T_m,
-                                ZRegS(IDX(z_tmp_1)));
-                    }
-                    for (int i = 0; i < 16; i++) {
-                        h->cmpeq(p_tmp0.s, PReg(IDX(p_tmp1)),
-                                ZRegS(IDX(z_tmp_0)), i);
-                        h->dup(ZRegS(IDX(z_tmp_1)),
-                                ZRegS(IDX(coeffs_address(coeff_idx, 16)))[i]);
-                        h->mov(ZRegS(IDX(z_tmp_2)), p_tmp0 / T_m,
-                                ZRegS(IDX(z_tmp_1)));
-                    }
-                    h->mov(ZRegD(IDX(zmm_coeff)), ZRegD(IDX(z_tmp_2)));
+                    vpermt2ps_aarch64(ZRegS(IDX(zmm_coeff)),
+                            ZRegS(IDX(zmm_pol_idx)),
+                            ZRegS(IDX(coeffs_address(coeff_idx, 16))),
+                            ZRegS(IDX(vmm_aux5)), ZRegS(IDX(vmm_aux6)),
+                            ZRegS(IDX(vmm_aux7)), p_tmp0);
                     break;
                 }
             default: assert(!"unimplemented");
@@ -988,32 +992,32 @@ template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_fwd(
         const Vmm &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(zero))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(alpha))));
-    h->fminnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmin(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
+    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_fwd(
         const Vmm &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(alpha))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(beta))));
-    h->fminnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmin(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(beta))));
+    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 }
 
 template <cpu_isa_t isa>
@@ -1033,16 +1037,16 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
     }
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
-    h->fminnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmin(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
+    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(exp_ln_flt_min_f))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_min_f))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
     if (vlen != 32) {
         h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
@@ -1249,10 +1253,9 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
 
     if (has_avx512()) {
         h->movs(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-        h->and_(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(vmm_aux3)),
-                ZRegD(IDX(vmm_aux3)));
-        h->cmpne(PRegS(IDX(p_mask)), PReg(IDX(p_tmp0)) / T_z,
-                ZRegS(IDX(z_tmp_0)), 0);
+        h->and_(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_aux3)));
+        h->cmpne(PRegS(IDX(p_mask)), PReg(IDX(p_tmp0)) / T_z, ZRegS(IDX(z_tmp)),
+                0);
     } else {
         //        h->uni_vh->movups(vmm_mask, vmm_aux3);
         if (vlen != 32) {
@@ -1533,9 +1536,9 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
             h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
         }
 
-        h->mov(z_tmp_0.d, ZRegD(IDX(vmm_src)));
+        h->mov(z_tmp.d, ZRegD(IDX(vmm_src)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux0)));
-        h->fdiv(ZRegS(IDX(vmm_src)), p_512 / T_m, z_tmp_0.s);
+        h->fdiv(ZRegS(IDX(vmm_src)), p_512 / T_m, z_tmp.s);
     } else if (beta_ == 0) { // alpha
         if (vlen != 32) {
             h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
@@ -1660,18 +1663,18 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
                     i * sizeof(float), XReg(IDX(x_tmp_1)));
             h->add(XReg(IDX(x_tmp_0)), XReg(IDX(x_tmp_0)), XReg(IDX(h->x0)));
             h->ld1(VReg(IDX(xmm0)).s[0], ptr(XReg(IDX(x_tmp_0))));
-            h->mov(ZRegS(IDX(z_tmp_0)), 0);
+            h->mov(ZRegS(IDX(z_tmp)), 0);
             for (int ii = 1; ii < 4; ii++) {
-                h->mov(VReg(IDX(xmm0)).s[ii], VReg(IDX(z_tmp_0)).s[0]);
+                h->mov(VReg(IDX(xmm0)).s[ii], VReg(IDX(z_tmp)).s[0]);
             }
             // beta
             h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), vlen,
                     XReg(IDX(x_tmp_1)));
             h->add(XReg(IDX(x_tmp_0)), XReg(IDX(x_tmp_0)), XReg(IDX(h->x0)));
             h->ld1(VReg(IDX(xmm1)).s[0], ptr(XReg(IDX(x_tmp_0))));
-            h->mov(ZRegS(IDX(z_tmp_0)), 0);
+            h->mov(ZRegS(IDX(z_tmp)), 0);
             for (int ii = 1; ii < 4; ii++) {
-                h->mov(VReg(IDX(xmm1)).s[ii], VReg(IDX(z_tmp_0)).s[0]);
+                h->mov(VReg(IDX(xmm1)).s[ii], VReg(IDX(z_tmp)).s[0]);
             }
 
             h->br(h->x0);
@@ -2060,10 +2063,10 @@ void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_bwd(
     blend_with_mask(vmm_src, table_val(zero));
     // make all negative values zeros
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp_0)), ZRegD(IDX(table_val(zero))));
-    h->fmaxnm(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->fmax(ZRegS(IDX(z_tmp_0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
-    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp_0)));
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
+    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     // everything bigger than 0.f should be 1.f
     compute_cmp_mask(vmm_src, table_val(zero), _cmp_gt_os);
@@ -2456,7 +2459,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_elu_use_dst_for_bwd:
             case eltwise_elu: return 4;
             case eltwise_tanh_use_dst_for_bwd:
-            case eltwise_tanh: return 5;
+            case eltwise_tanh: return 8;
             case eltwise_square: return 0;
             case eltwise_abs: return 0;
             case eltwise_sqrt_use_dst_for_bwd:
@@ -2485,7 +2488,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
 
             case eltwise_elu: return 3;
             case eltwise_tanh_use_dst_for_bwd: return 1;
-            case eltwise_tanh: return 5;
+            case eltwise_tanh: return 8;
             case eltwise_square: return 0;
             case eltwise_abs: return 0;
             case eltwise_sqrt_use_dst_for_bwd:
@@ -2497,7 +2500,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_logistic: return 4;
             case eltwise_exp_use_dst_for_bwd: return 0;
             case eltwise_exp: return 3;
-            case eltwise_gelu_tanh: return 5;
+            case eltwise_gelu_tanh: return 8;
             case eltwise_swish: return 4;
             case eltwise_log: return 1;
             case eltwise_clip: return 2;
