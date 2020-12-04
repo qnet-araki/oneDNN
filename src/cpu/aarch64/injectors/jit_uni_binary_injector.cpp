@@ -1267,8 +1267,6 @@ template class jit_uni_binary_injector_t<sse41>;
   */
 
 template class jit_uni_binary_injector_t<sve_512>;
-template class jit_uni_binary_injector_t<sve_256>;
-template class jit_uni_binary_injector_t<sve_128>;
 template class jit_uni_binary_injector_t<asimd>;
 
 } // namespace binary_injector

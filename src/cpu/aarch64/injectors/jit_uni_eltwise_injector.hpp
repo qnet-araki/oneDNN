@@ -56,7 +56,8 @@ struct static_params_t {
 
 template <cpu_isa_t isa>
 struct jit_uni_eltwise_injector_f32 {
-    using Vmm = typename cpu_isa_traits<isa>::Vmm;
+    using TReg = typename cpu_isa_traits<isa>::TReg;
+    using TRegS = typename cpu_isa_traits<isa>::TRegS;
 
     // Arguments description:
     // host - jit generator which is filled with instructions
@@ -148,9 +149,7 @@ private:
     };
 
     static constexpr size_t vlen = cpu_isa_traits<isa>::vlen;
-    /* For AArch64, +1 because of memory operand */
-    //    static constexpr size_t preserved_vecs_max = 6;
-    static constexpr size_t preserved_vecs_max = 9; //[info]
+    static constexpr size_t preserved_vecs_max = 9;
     static constexpr size_t preserved_gprs_max = 4;
     static constexpr size_t vecs_count = 32;
     static constexpr int n_mantissa_bits = 23;
@@ -163,20 +162,18 @@ private:
     injector_utils::vmm_index_set_iterator_t start_idx_tail;
 
     /* These vector register must be assigned proper index. */
-    Vmm vmm_mask {0}, vmm_aux0 {0}, vmm_aux1 {0}, vmm_aux2 {0}, vmm_aux3 {0},
+    TRegS vmm_mask {0}, vmm_aux0 {0}, vmm_aux1 {0}, vmm_aux2 {0}, vmm_aux3 {0},
             vmm_aux4 {0}, vmm_aux5 {0}, vmm_aux6 {0}, vmm_aux7 {0}, vmm_tmp {0};
 
     /* Caution: Chose predicate registers not used by x64's implementation,
        and register indices must be same as jit_uni_eltwise.cpp
        and convolutions which uses eltwise_injector. */
-    Xbyak_aarch64::PReg p_lsb {
-            7}; /* If Vmm = Ymm(Xmm), then p_lsb set to p_256, p_128. */
+    Xbyak_aarch64::PReg p_lsb {7};
     Xbyak_aarch64::PReg p_512 {7};
-    Xbyak_aarch64::PReg p_256 {6};
-    Xbyak_aarch64::PReg p_128 {5};
+    //    Xbyak_aarch64::PReg p_256 {6};
+    //    Xbyak_aarch64::PReg p_128 {5};
     Xbyak_aarch64::PReg p_tmp0 {4};
-    Xbyak_aarch64::PReg p_tmp1 {3};
-    //    PReg p_lsb_32 {3};
+    //    Xbyak_aarch64::PReg p_tmp1 {3};
 
     Xbyak_aarch64::XReg x_tmp_0 {23};
     Xbyak_aarch64::XReg x_tmp_1 {24};
@@ -192,7 +189,7 @@ private:
      not to be same as jit_uni_eltwise.(cpp|hpp).
      This index is changed by assign_regs() in case of eltwise injection.
   */
-    Xbyak_aarch64::ZReg z_tmp {31};
+    TRegS z_tmp {31};
 
     //  const std::vector<ZReg> z_tmp_vec = {
     //    z_tmp0, z_tmp1, z_tmp2, z_tmp3, z_tmp4, z_tmp5, z_tmp6, z_tmp7};
@@ -209,52 +206,50 @@ private:
             const injector_utils::vmm_index_set_iterator_t start_idx_it);
     void injector_postamble();
     void assign_regs();
-    void vec_shift(const Vmm &vmm_dst, const Vmm &vmm_src, bool shift_left,
+    void vec_shift(const TRegS &vmm_dst, const TRegS &vmm_src, bool shift_left,
             const int imm);
     void compute_cmp_mask(
-            const Vmm &vmm_src, const Vmm &vmm_cmpare, int cmp_predicate);
-    void blend_with_mask(const Vmm &vmm_dst, const Vmm &src);
+            const TRegS &vmm_src, const TRegS &vmm_cmpare, int cmp_predicate);
+    void blend_with_mask(const TRegS &vmm_dst, const TRegS &src);
     void test_mask();
 
-    void exp_compute_vector_fwd(const Vmm &vmm_src);
-    void relu_compute_vector_fwd(const Vmm &vmm_src);
-    void relu_zero_ns_compute_vector_fwd(const Vmm &vmm_src);
-    void elu_compute_vector_fwd(const Vmm &vmm_src);
-    void tanh_compute_vector_fwd(const Vmm &vmm_src);
-    void square_compute_vector_fwd(const Vmm &vmm_src);
-    void abs_compute_vector_fwd(const Vmm &vmm_src);
-    void sqrt_compute_vector_fwd(const Vmm &vmm_src);
-    void linear_compute_vector_fwd(const Vmm &vmm_src);
-    void bounded_relu_compute_vector_fwd(const Vmm &vmm_src);
-    void soft_relu_compute_vector_fwd(const Vmm &vmm_src);
-    void logistic_compute_vector_fwd(const Vmm &vmm_src);
-    void gelu_tanh_compute_vector_fwd(const Vmm &vmm_src);
-    void swish_compute_vector_fwd(const Vmm &vmm_src);
-    void log_compute_vector_fwd(const Vmm &vmm_src);
-    void clip_compute_vector_fwd(const Vmm &vmm_src);
-    void pow_compute_vector_fwd(const Vmm &vmm_src);
-    void gelu_erf_compute_vector_fwd(const Vmm &vmm_src);
-    void round_compute_vector_fwd(const Vmm &vmm_src);
+    void exp_compute_vector_fwd(const TRegS &vmm_src);
+    void relu_compute_vector_fwd(const TRegS &vmm_src);
+    void relu_zero_ns_compute_vector_fwd(const TRegS &vmm_src);
+    void elu_compute_vector_fwd(const TRegS &vmm_src);
+    void tanh_compute_vector_fwd(const TRegS &vmm_src);
+    void square_compute_vector_fwd(const TRegS &vmm_src);
+    void abs_compute_vector_fwd(const TRegS &vmm_src);
+    void sqrt_compute_vector_fwd(const TRegS &vmm_src);
+    void linear_compute_vector_fwd(const TRegS &vmm_src);
+    void bounded_relu_compute_vector_fwd(const TRegS &vmm_src);
+    void soft_relu_compute_vector_fwd(const TRegS &vmm_src);
+    void logistic_compute_vector_fwd(const TRegS &vmm_src);
+    void gelu_tanh_compute_vector_fwd(const TRegS &vmm_src);
+    void swish_compute_vector_fwd(const TRegS &vmm_src);
+    void log_compute_vector_fwd(const TRegS &vmm_src);
+    void clip_compute_vector_fwd(const TRegS &vmm_src);
+    void pow_compute_vector_fwd(const TRegS &vmm_src);
+    void gelu_erf_compute_vector_fwd(const TRegS &vmm_src);
+    void round_compute_vector_fwd(const TRegS &vmm_src);
 
-    void exp_compute_vector_bwd(const Vmm &vmm_src);
-    void relu_compute_vector_bwd(const Vmm &vmm_src);
-    void elu_compute_vector_bwd(const Vmm &vmm_src);
-    void tanh_compute_vector_bwd(const Vmm &vmm_src);
-    void square_compute_vector_bwd(const Vmm &vmm_src);
-    void abs_compute_vector_bwd(const Vmm &vmm_src);
-    void sqrt_compute_vector_bwd(const Vmm &vmm_src);
-    void linear_compute_vector_bwd(const Vmm &vmm_src);
-    void bounded_relu_compute_vector_bwd(const Vmm &vmm_src);
-    void soft_relu_compute_vector_bwd(const Vmm &vmm_src);
-    void logistic_compute_vector_bwd(const Vmm &vmm_src);
-    void gelu_tanh_compute_vector_bwd(const Vmm &vmm_src);
-    void swish_compute_vector_bwd(const Vmm &vmm_src);
-    void log_compute_vector_bwd(const Vmm &vmm_src);
-    void clip_compute_vector_bwd(const Vmm &vmm_src);
-    void pow_compute_vector_bwd(const Vmm &vmm_src);
-    void gelu_erf_compute_vector_bwd(const Vmm &vmm_src);
-
-    void uni_ldr(const Vmm &vmm_dst, const Xbyak_aarch64::XReg &addr);
+    void exp_compute_vector_bwd(const TRegS &vmm_src);
+    void relu_compute_vector_bwd(const TRegS &vmm_src);
+    void elu_compute_vector_bwd(const TRegS &vmm_src);
+    void tanh_compute_vector_bwd(const TRegS &vmm_src);
+    void square_compute_vector_bwd(const TRegS &vmm_src);
+    void abs_compute_vector_bwd(const TRegS &vmm_src);
+    void sqrt_compute_vector_bwd(const TRegS &vmm_src);
+    void linear_compute_vector_bwd(const TRegS &vmm_src);
+    void bounded_relu_compute_vector_bwd(const TRegS &vmm_src);
+    void soft_relu_compute_vector_bwd(const TRegS &vmm_src);
+    void logistic_compute_vector_bwd(const TRegS &vmm_src);
+    void gelu_tanh_compute_vector_bwd(const TRegS &vmm_src);
+    void swish_compute_vector_bwd(const TRegS &vmm_src);
+    void log_compute_vector_bwd(const TRegS &vmm_src);
+    void clip_compute_vector_bwd(const TRegS &vmm_src);
+    void pow_compute_vector_bwd(const TRegS &vmm_src);
+    void gelu_erf_compute_vector_bwd(const TRegS &vmm_src);
 
     enum key_t {
         scale = 0, // scale argument
@@ -311,7 +306,7 @@ private:
         return te.off + key_off_val_shift * scale;
     }
 
-    Vmm table_val(key_t key, size_t key_off_val_shift = 0) {
+    TRegS table_val(key_t key, size_t key_off_val_shift = 0) {
         Xbyak_aarch64::XReg x_addr(h->X_DEFAULT_ADDR);
         uint32_t tableIdx = static_cast<uint32_t>(x_table.getIdx());
         auto off = table_off(key, key_off_val_shift);
@@ -322,8 +317,8 @@ private:
             x_addr = Xbyak_aarch64::XReg(tableIdx);
         }
 
-        h->ld1w(z_tmp.s, p_lsb / Xbyak_aarch64::T_z, ptr(x_addr));
-        return Vmm(z_tmp.getIdx());
+        h->ldr(TReg(z_tmp.getIdx()), ptr(x_addr));
+        return z_tmp;
     }
 
     // we accept only 32bit hexadecimal table values to avoid any rounding

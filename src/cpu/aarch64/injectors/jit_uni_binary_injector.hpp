@@ -28,11 +28,6 @@
 #include "common/c_types_map.hpp"
 #include "common/primitive_attr.hpp"
 #include "common/primitive_exec_types.hpp"
-/*
-#include "cpu/x64/cpu_isa_traits.hpp"
-#include "cpu/x64/injectors/injector_utils.hpp"
-#include "cpu/x64/jit_generator.hpp"
-*/
 #include "cpu/aarch64/cpu_isa_traits.hpp"
 #include "cpu/aarch64/injectors/injector_utils.hpp"
 #include "cpu/aarch64/jit_generator.hpp"
@@ -265,7 +260,7 @@ public:
     jit_uni_binary_injector_t(
             jit_generator *host, const static_params_t &static_params);
 
-    using Vmm = typename cpu_isa_traits<isa>::Vmm;
+    using Vmm = typename cpu_isa_traits<isa>::TReg;
 
     /*
      * Generates code of binary post_op injected to host primitive. Applied to

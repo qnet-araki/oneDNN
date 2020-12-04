@@ -95,8 +95,6 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         eltwise_injector_->load_table_addr();
 
         ptrue(p_512.b);
-        ptrue(p_256.b, VL32);
-        ptrue(p_128.b, VL16);
 
         Label reminder_loop_start, reminder_loop_end;
         Label vectorized_loop_start, vectorized_loop_end;
@@ -191,7 +189,7 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
     }
 
 private:
-    using Vmm = typename cpu_isa_traits<isa>::Vmm;
+    using TRegS = typename cpu_isa_traits<isa>::TRegS;
 
     int vlen() {
         int vlen = cpu_isa_traits<isa>::vlen;
@@ -208,18 +206,18 @@ private:
     PReg injector_mask = p1;
 
     VReg4S xmm_src {1};
-    Vmm vmm_src {1};
+    TRegS vmm_src {1};
     VReg4S xmm_diff_dst {2};
-    Vmm vmm_diff_dst {2};
+    TRegS vmm_diff_dst {2};
     std::unique_ptr<jit_uni_eltwise_injector_f32<isa>> eltwise_injector_;
 
     /* Caution: Chose predicate registers not used by x64's implementation,
        and register indices must be same as jit_uni_eltwise.cpp
        and convolutions which uses eltwise_injector. */
-    PReg p_lsb {7}; /* If Vmm = Ymm(Xmm), then p_lsb set to p_256, p_128. */
+    //    PReg p_lsb {7}; /* If Vmm = Ymm(Xmm), then p_lsb set to p_256, p_128. */
     PReg p_512 {7};
-    PReg p_256 {6};
-    PReg p_128 {5};
+    //    PReg p_256 {6};
+    //    PReg p_128 {5};
     PReg p_tmp0 {4};
     //    PReg p_lsb_32 {3};
 

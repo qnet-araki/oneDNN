@@ -75,8 +75,6 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble(
     assert(preserved_gprs_count == aux_gprs_count());
 
     h->ptrue(p_512.b);
-    h->ptrue(p_256.b, VL32);
-    h->ptrue(p_128.b, VL16);
 
     if (save_state_) {
         h->str(XReg(IDX(x_table)), pre_ptr(XReg(IDX(h->X_SP)), -8));
@@ -103,13 +101,9 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble(
                 i++;
             } while (i < preserved_vecs_count && count < x_tmp_vec_size);
 
-            if (vlen != 32)
-                for (int j = 0; j < count; j++)
-                    h->st1w(ZRegS(preserved_vec_idxs[ii++]), p_lsb,
-                            ptr(x_tmp_vec[j]));
-            else
-                for (int j = 0; j < count; j++)
-                    h->str(QReg(preserved_vec_idxs[ii++]), ptr(x_tmp_vec[j]));
+            for (int j = 0; j < count; j++)
+                h->st1w(ZRegS(preserved_vec_idxs[ii++]), p_512,
+                        ptr(x_tmp_vec[j]));
         }
         load_table_addr();
     }
@@ -143,14 +137,9 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble_tail(
                 i++;
             } while (i < tail_vecs_to_preserve && count < x_tmp_vec_size);
 
-            if (vlen != 32)
-                for (int j = 0; j < count; j++)
-                    h->ld1w(ZRegS(preserved_vec_idxs[idx_off + ii++]),
-                            p_lsb / T_z, ptr(x_tmp_vec[j]));
-            else
-                for (int j = 0; j < count; j++)
-                    h->ldr(QReg(preserved_vec_idxs[idx_off + ii++]),
-                            ptr(x_tmp_vec[j]));
+            for (int j = 0; j < count; j++)
+                h->ld1w(ZRegS(preserved_vec_idxs[idx_off + ii++]), p_512 / T_z,
+                        ptr(x_tmp_vec[j]));
         }
     }
 
@@ -173,7 +162,7 @@ void jit_uni_eltwise_injector_f32<isa>::injector_preamble_tail(
             if (vlen != 32)
                 for (int j = 0; j < count; j++)
                     h->st1w(ZRegS(preserved_vec_idxs[idx_off + ii++]),
-                            p_lsb / T_z, ptr(x_tmp_vec[j]));
+                            p_512 / T_z, ptr(x_tmp_vec[j]));
             else
                 for (int j = 0; j < count; j++)
                     h->str(QReg(preserved_vec_idxs[idx_off + ii++]),
@@ -205,7 +194,7 @@ void jit_uni_eltwise_injector_f32<isa>::injector_postamble() {
 
         if (vlen != 32)
             for (int j = 0; j < count; j++)
-                h->ld1w(ZRegS(preserved_vec_idxs[ii++]), p_lsb / T_z,
+                h->ld1w(ZRegS(preserved_vec_idxs[ii++]), p_512 / T_z,
                         ptr(x_tmp_vec[j]));
         else
             for (int j = 0; j < count; j++)
@@ -223,22 +212,22 @@ void jit_uni_eltwise_injector_f32<isa>::injector_postamble() {
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::assign_regs() {
     /* For translation of x64's memory operand instructions */
-    z_tmp = ZReg(static_cast<uint32_t>(preserved_vec_idxs[0]));
+    z_tmp = ZRegS(static_cast<uint32_t>(preserved_vec_idxs[0]));
 
-    vmm_mask = Vmm(preserved_vec_idxs[1]);
-    vmm_aux0 = Vmm(preserved_vec_idxs[1]);
-    vmm_aux1 = Vmm(preserved_vec_idxs[2]);
-    vmm_aux2 = Vmm(preserved_vec_idxs[3]);
-    vmm_aux3 = Vmm(preserved_vec_idxs[4]);
-    vmm_aux4 = Vmm(preserved_vec_idxs[5]);
-    vmm_aux5 = Vmm(preserved_vec_idxs[6]);
-    vmm_aux6 = Vmm(preserved_vec_idxs[7]);
-    vmm_aux7 = Vmm(preserved_vec_idxs[8]);
+    vmm_mask = TRegS(preserved_vec_idxs[1]);
+    vmm_aux0 = TRegS(preserved_vec_idxs[1]);
+    vmm_aux1 = TRegS(preserved_vec_idxs[2]);
+    vmm_aux2 = TRegS(preserved_vec_idxs[3]);
+    vmm_aux3 = TRegS(preserved_vec_idxs[4]);
+    vmm_aux4 = TRegS(preserved_vec_idxs[5]);
+    vmm_aux5 = TRegS(preserved_vec_idxs[6]);
+    vmm_aux6 = TRegS(preserved_vec_idxs[7]);
+    vmm_aux7 = TRegS(preserved_vec_idxs[8]);
 }
 
 template <cpu_isa_t isa>
-void jit_uni_eltwise_injector_f32<isa>::vec_shift(const Vmm &vmm_dst,
-        const Vmm &vmm_src, bool shift_left, const int imm) {
+void jit_uni_eltwise_injector_f32<isa>::vec_shift(const TRegS &vmm_dst,
+        const TRegS &vmm_src, bool shift_left, const int imm) {
 #if 0 // kawakami
   if (isa != avx) {
         if (shift_left)
@@ -268,7 +257,7 @@ void jit_uni_eltwise_injector_f32<isa>::vec_shift(const Vmm &vmm_dst,
 // Stores a mask by applying cmpps on two inputs w/ a given predicate.
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::compute_cmp_mask(
-        const Vmm &vmm_src, const Vmm &compare_operand, int cmp_predicate) {
+        const TRegS &vmm_src, const TRegS &compare_operand, int cmp_predicate) {
 
     enum {
         EQ_OQ = 0,
@@ -416,49 +405,11 @@ void jit_uni_eltwise_injector_f32<isa>::compute_cmp_mask(
     }
 }
 
-template <cpu_isa_t isa>
-void jit_uni_eltwise_injector_f32<isa>::uni_ldr(
-        const Vmm &vmm_dst, const Xbyak_aarch64::XReg &addr) {
-#if 0 // kawakami
-  RegExp exp = addr.getAddress().getRegExp();
-    uint32_t base = IDX(exp.getBase());
-    uint32_t index = IDX(exp.getIndex());
-    bool isIndexExist = exp.getIndex().isREG();
-    int scale = exp.getScale();
-    int disp = exp.getDisp();
-    XReg x_base(base);
-    XReg x_index(index);
-    XReg x_tmp_addr(h->X_DEFAULT_ADDR);
-    ZReg z_dst(IDX(vmm_dst));
-
-    /* At this time, ignore disp only addressing. */
-    assert(exp.getBase().getBit());
-    assert(scale == 1);
-    (void)scale;
-
-    /* Address calculation */
-    if (isIndexExist == false && disp == 0) {
-        x_tmp_addr = x_base;
-    } else if (isIndexExist && disp == 0) {
-        h->add(x_tmp_addr, x_base, x_index);
-    } else if (isIndexExist == false && disp) {
-        //        h->add_imm(x_tmp_addr, x_base, disp, h->X_TMP_0);
-        h->add_imm(x_tmp_addr, x_base, disp, x_tmp_0);
-    } else {
-        h->add(x_tmp_addr, x_base, x_index);
-        //        h->add_imm(x_tmp_addr, x_base, disp, h->X_TMP_0);
-        h->add_imm(x_tmp_addr, x_base, disp, x_tmp_0);
-    }
-
-    h->ld1w(z_dst.s, p_lsb / T_z, ptr(x_tmp_addr));
-#endif //#if 0 // kawakami
-}
-
 // Uses injector masks objects: k_mask (>= avx512_common) or vmm_mask (<= avx2).
 // Blends a result of second input into a first input w/ a stored mask.
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::blend_with_mask(
-        const Vmm &vmm_dst, const Vmm &src) {
+        const TRegS &vmm_dst, const TRegS &src) {
     if (vlen == 64) {
         h->sel(ZRegS(IDX(vmm_dst)), PReg(IDX(p_mask)) / T_m, ZRegS(IDX(src)),
                 ZRegS(IDX(vmm_dst)));
@@ -477,7 +428,7 @@ void jit_uni_eltwise_injector_f32<isa>::blend_with_mask(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
 
     // exp(x) =
     // = exp(n * ln(2) + r) // divide x by ln(2) and get quot and rem
@@ -488,7 +439,7 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
     h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
-    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fminnm(z_tmp, PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
@@ -533,7 +484,7 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
     h->add(ZReg(IDX(vmm_aux2)).s, ZReg(IDX(vmm_aux2)).s,
             ZReg(IDX(table_val(exponent_bias))).s);
     h->lsl(ZRegS(IDX(vmm_aux2)), ZRegS(IDX(vmm_aux2)),
-            n_mantissa_bits); //Vmm(6) = 2^-fx
+            n_mantissa_bits); //TRegS(6) = 2^-fx
 
     // use vmm_src as tmp vmm_zero when applying mask
     h->eor(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_src)));
@@ -542,15 +493,15 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
 
     // compute polynomial
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(exp_pol, 4))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 3))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 0))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
 
     // y = y * 2^n
@@ -561,15 +512,15 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::relu_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
@@ -581,7 +532,7 @@ void jit_uni_eltwise_injector_f32<isa>::relu_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::relu_zero_ns_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
     h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
@@ -591,16 +542,16 @@ void jit_uni_eltwise_injector_f32<isa>::relu_zero_ns_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::elu_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // IMPORTANT: we use vmm_aux3 for the mask as exp_compute does not use it.
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     }
@@ -621,16 +572,16 @@ void jit_uni_eltwise_injector_f32<isa>::elu_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // we add a check as the avx2 code cannot be used for avx
     using namespace Xbyak_aarch64::util;
     const int tanh_n_polynomials = 32;
 
     // register mapping
     // TODO: put sign on stack and alias zmm_table2 with vmm_sign to save a reg ?
-    Vmm vmm_dst = vmm_aux1, vmm_src_shift = vmm_aux1, vmm_coeff = vmm_aux1,
-        vmm_pol = vmm_aux2, vmm_indices = vmm_aux3, vmm_src_original = vmm_aux4,
-        vmm_sign = vmm_aux4;
+    TRegS vmm_dst = vmm_aux1, vmm_src_shift = vmm_aux1, vmm_coeff = vmm_aux1,
+          vmm_pol = vmm_aux2, vmm_indices = vmm_aux3,
+          vmm_src_original = vmm_aux4, vmm_sign = vmm_aux4;
 
     auto vpermt2ps_aarch64 =
             [&](const ZRegS &d, const ZRegS &s, const ZRegS &s2, const ZRegS &t,
@@ -674,14 +625,14 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
     auto coeffs_address = [&](int coeff_off, int off = 0) {
         return table_val(tanh_pol_table, coeff_off * tanh_n_polynomials + off);
     };
-    auto gather_coefficient_init = [&](Vmm vmm_pol_idx, int nelems) {
+    auto gather_coefficient_init = [&](TRegS vmm_pol_idx, int nelems) {
         switch (isa) {
             case sve_512: break;
             default: assert(!"unimplemented");
         }
     };
-    auto gather_coefficient = [&](Vmm vmm_coeff, int coeff_idx,
-                                      Vmm vmm_pol_idx) {
+    auto gather_coefficient = [&](TRegS vmm_coeff, int coeff_idx,
+                                      TRegS vmm_pol_idx) {
         switch (isa) {
                 // use gather instruction
             case sve_512:
@@ -692,15 +643,15 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
                     ZReg zmm_pol_idx(vmm_pol_idx.getIdx());
                     if (vlen != 32) {
                         h->not_(p_tmp0.b, h->P_ALL_ONE / T_z,
-                                PRegB(IDX(p_lsb)));
+                                PRegB(IDX(p_512)));
                         h->mov(ZRegD(IDX(zmm_coeff)),
                                 ZRegD(IDX(coeffs_address(coeff_idx, 0))));
                         h->mov(ZRegS(IDX(zmm_coeff)), p_tmp0 / T_m, 0);
                     } else {
                         /* This route has not been tested */
                         h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                                PRegB(IDX(p_lsb)));
-                        h->mov(ZRegS(IDX(zmm_coeff)), PReg(IDX(p_lsb)) / T_m,
+                                PRegB(IDX(p_512)));
+                        h->mov(ZRegS(IDX(zmm_coeff)), PReg(IDX(p_512)) / T_m,
                                 ZRegS(IDX(coeffs_address(coeff_idx, 0))));
                         h->mov(ZRegS(IDX(zmm_coeff)), p_tmp0 / T_m, 0);
                     }
@@ -719,13 +670,13 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
     // because tanh(x) = -tanh(-x), we extract sign to make x postive
     // and reapply sign at the end
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src_original)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_src_original)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src_original)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src_original)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_src_original)), p_tmp0 / T_m, 0);
     }
@@ -734,13 +685,13 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
 
     // We compute the indices for the table lookup
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_indices)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_indices)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_indices)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_indices)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_indices)), p_tmp0 / T_m, 0);
     }
@@ -752,13 +703,13 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
 
     // we do the argument reduction
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src_shift)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_src_shift)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src_shift)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src_shift)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_src_shift)), p_tmp0 / T_m, 0);
     }
@@ -773,20 +724,20 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
 
     for (int deg = 5; deg >= 0; --deg) {
         gather_coefficient(vmm_coeff, deg, vmm_indices);
-        h->fmad(ZRegS(IDX(vmm_pol)), p_lsb / T_m, ZRegS(IDX(vmm_src)),
+        h->fmad(ZRegS(IDX(vmm_pol)), p_512 / T_m, ZRegS(IDX(vmm_src)),
                 ZRegS(IDX(vmm_coeff)));
     }
 
     // we restore src with cleared sign, and keep sign
     assert(vmm_sign.getIdx() == vmm_src_original.getIdx());
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_src_original)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src_original)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -798,27 +749,27 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
     // Now we blend the results
     // [saturation_ubound; +inf[ : we return +/- 1
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_dst)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_dst)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_dst)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_dst)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_dst)), p_tmp0 / T_m, 0);
     }
 
     // [linear_ubound; saturation_lbound] : we return +/- P(x)
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_mask)),
                 ZRegD(IDX(table_val(tanh_saturation_lbound))));
         h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_mask)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_mask)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(tanh_saturation_lbound))));
         h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
     }
@@ -828,13 +779,13 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
 
     // [0; linear_ubound]  : we return x
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_mask)), ZRegD(IDX(table_val(tanh_linear_ubound))));
         h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_mask)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_mask)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(tanh_linear_ubound))));
         h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
     }
@@ -846,13 +797,13 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
     h->eor(ZReg(IDX(vmm_dst)).d, ZReg(IDX(vmm_dst)).d, ZReg(IDX(vmm_sign)).d);
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_dst)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_dst)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -860,15 +811,15 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     }
@@ -876,18 +827,18 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_fwd(
     // compute G(x) = sqrt_root_two_over_pi * x * (1 + fitting_const * x * x)
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s);
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)),
                 ZRegD(IDX(table_val(gelu_tanh_fitting_const))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(gelu_tanh_fitting_const))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_aux0)).s);
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
@@ -926,13 +877,13 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::square_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s);
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::abs_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // compute abs(x) = _mm_and_ps(x, 01111..111));
     h->and_(ZReg(IDX(vmm_src)).d, ZReg(IDX(vmm_src)).d,
             ZReg(IDX(table_val(positive_mask))).d);
@@ -940,7 +891,7 @@ void jit_uni_eltwise_injector_f32<isa>::abs_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::sqrt_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b, h->P_ALL_ONE.b);
     h->fsqrt(ZReg(IDX(vmm_src)).s, PReg(IDX(p_tmp0)) / T_m,
             ZReg(IDX(vmm_src)).s);
@@ -948,26 +899,26 @@ void jit_uni_eltwise_injector_f32<isa>::sqrt_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::linear_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // compute x = alpha * x + beta;
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(alpha))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(alpha))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux0)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux0)),
             ZRegS(IDX(table_val(beta))));
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
     h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
@@ -983,7 +934,7 @@ void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
     h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
@@ -999,7 +950,7 @@ void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // ln(1 + exp(x)) =
     // = ln(1 + exp(n * ln(2) + r)) // divide x by ln(2) and get quot and rem
     // = ln(1 + 2^n * exp(r)) // simplify the exp(n*ln(2)) expression
@@ -1105,21 +1056,21 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
 
     // compute log1p polynomial
     h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(soft_relu_pol, 8))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 7))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 6))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 5))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 4))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 3))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 0))));
     //calculate ln(2) * n
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
@@ -1135,19 +1086,19 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // To avoid exp(x) overflow happened at x > logf(FLT_MAX), negate positive,
     // compute exp(x), where x <= 0 to get 0 <= exp(x) <= 1 and restore value
     // sign at the end. This is possible due to logistic is symmetric function.
     // IMPORTANT: we use vmm_aux3 for the mask as exp_compute does not use it.
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     }
@@ -1161,13 +1112,13 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
 
     // dup exp(x)
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
@@ -1180,13 +1131,13 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
 
     // Now we have to apply the "symmetry" based on original sign
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux2)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
     }
@@ -1199,13 +1150,13 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
     blend_with_mask(vmm_aux2, vmm_src);
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux2)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux2)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -1213,7 +1164,7 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::swish_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // Save src data on stack for later usage
     h->sub_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)), vlen, x_tmp_0);
     h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), 0, XReg(IDX(x_tmp_1)));
@@ -1243,7 +1194,7 @@ void jit_uni_eltwise_injector_f32<isa>::swish_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // From J.-M. Muller and others, Handbook of Floating-Point Arithmetic, 2010
     // Here is a brief mathematics to approximate log(x):
     // log(x) = E * log(2) + log(y), where -log(2)/2 <= log(y) <= log(2)/2;
@@ -1302,7 +1253,7 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
     assert(it != entry_map_.end());
     const auto table_start_idx = (*it).second.off;
 
-    auto gather_table_values = [&](const Vmm &vmm_dst, const Vmm &vmm_idxs,
+    auto gather_table_values = [&](const TRegS &vmm_dst, const TRegS &vmm_idxs,
                                        size_t offt = 0) {
         XReg x_addr(h->X_DEFAULT_ADDR);
         h->ptrue(PRegS(IDX(p_mask)), VL16);
@@ -1328,23 +1279,23 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
 
     // compute polynomial(rel_err)
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(log_pol, 3))));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(log_pol, 3))));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux2)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux2)),
             ZRegS(IDX(table_val(log_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux2)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux2)),
             ZRegS(IDX(table_val(log_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux2)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux2)),
             ZRegS(IDX(table_val(log_pol, 0))));
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux2)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux2)),
             ZRegS(IDX(table_val(one))));
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_aux2)).s);
 
@@ -1364,26 +1315,26 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
     // h->uni_vaddps(vmm_src, vmm_aux1, vmm_aux3); // res_hi = pol + pres
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
     h->fadd(ZReg(IDX(vmm_aux1)).s, ZReg(IDX(vmm_aux1)).s,
             ZReg(IDX(vmm_aux2)).s);
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     }
@@ -1392,13 +1343,13 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
     h->fsub(ZReg(IDX(vmm_aux3)).s, ZReg(IDX(vmm_aux3)).s,
             ZReg(IDX(vmm_src)).s); // res_lo = res_lo - pol
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -1438,35 +1389,35 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // dispatch between special cases.
     if (beta_ == -1) { // alpha / x
         if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
             h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
         } else {
             /* This route has not been tested */
             h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+                    PRegB(IDX(p_512)));
+            h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                     ZRegS(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
         }
 
-        h->mov(z_tmp.d, ZRegD(IDX(vmm_src)));
+        h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux0)));
-        h->fdiv(ZRegS(IDX(vmm_src)), p_512 / T_m, z_tmp.s);
+        h->fdiv(vmm_src, p_512 / T_m, z_tmp);
     } else if (beta_ == 0) { // alpha
         if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
             h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         } else {
             /* This route has not been tested */
             h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+                    PRegB(IDX(p_512)));
+            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                     ZRegS(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         }
@@ -1521,10 +1472,10 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
             h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), i * vlen,
                     XReg(IDX(x_tmp_1)));
             if (vlen != 32) {
-                h->str(ZReg(IDX(Vmm(i - 2))), ptr(XReg(IDX(x_tmp_0))));
+                h->str(ZReg(IDX(TRegS(i - 2))), ptr(XReg(IDX(x_tmp_0))));
             } else {
                 /* This route has not been tested */
-                h->str(QReg(IDX(Vmm(i - 2))), ptr(XReg(IDX(x_tmp_0))));
+                h->str(QReg(IDX(TRegS(i - 2))), ptr(XReg(IDX(x_tmp_0))));
             }
         }
 
@@ -1538,14 +1489,14 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
         }
 
         if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
             h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(beta))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         } else {
             /* This route has not been tested */
             h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+                    PRegB(IDX(p_512)));
+            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                     ZRegS(IDX(table_val(beta))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         }
@@ -1608,10 +1559,10 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
             h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), i * vlen,
                     XReg(IDX(x_tmp_1)));
             if (vlen != 32) {
-                h->ldr(ZReg(IDX(Vmm(i - 2))), ptr(XReg(IDX(x_tmp_0))));
+                h->ldr(ZReg(IDX(TRegS(i - 2))), ptr(XReg(IDX(x_tmp_0))));
             } else {
                 /* This route has not been tested */
-                h->ldr(QReg(IDX(Vmm(i - 2))), ptr(XReg(IDX(x_tmp_0))));
+                h->ldr(QReg(IDX(TRegS(i - 2))), ptr(XReg(IDX(x_tmp_0))));
             }
         }
 
@@ -1651,7 +1602,7 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // Here we approximate erf(x) using the expression by
     // Abramowitz and Stegun from ``Handbook of Mathematical
     // Functions''
@@ -1666,7 +1617,7 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
             ZReg(IDX(table_val(gelu_erf_one_over_sqrt_two))).s);
 
     // IMPORTANT: we use vmm_aux3 to save `x` as exp_compute does not use it.
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_src)));
     h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
 
@@ -1680,26 +1631,26 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
             ZReg(IDX(table_val(sign_mask))).d);
 
     // get sign
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(vmm_aux3)));
     h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     h->and_(ZReg(IDX(vmm_aux0)).d, ZReg(IDX(vmm_aux0)).d,
             ZReg(IDX(table_val(sign_mask))).d);
 
     // abs(x)
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_aux3)));
     h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     abs_compute_vector_fwd(vmm_aux1);
 
     // t = 1 / (p*x + 1)
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux2)), ZRegD(IDX(table_val(gelu_erf_approx_const))));
     h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
-    h->fmad(ZRegS(IDX(vmm_aux2)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux2)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
 
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux4)), ZRegD(IDX(table_val(one))));
     h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE, h->P_ALL_ONE.b);
@@ -1709,21 +1660,21 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_aux4)).s);
 
     // compute polynomialial r
-    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
     h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(gelu_erf_pol, 4))));
     h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
 
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 3))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 0))));
 
     // erf = sign * (1 - r * t * exp(-x*x))
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
     h->eor(ZReg(IDX(vmm_src)).d, ZReg(IDX(vmm_src)).d, ZReg(IDX(vmm_aux0)).d);
 
@@ -1731,25 +1682,25 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
     h->fmul(ZReg(IDX(vmm_aux3)).s, ZReg(IDX(vmm_aux3)).s,
             ZReg(IDX(table_val(gelu_erf_one_over_sqrt_two))).s);
     // GELU = 0.5 * s * (1 + erf) = S + S * erf
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(vmm_aux3)));
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::relu_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // invariant to whether `s` or `d` is passed.
     // get mask of `s` > 0
     compute_cmp_mask(vmm_src, table_val(zero), _cmp_gt_os);
     // fill with alpha, then blend with 1.f
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(alpha))));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(alpha))));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -1758,7 +1709,7 @@ void jit_uni_eltwise_injector_f32<isa>::relu_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::elu_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     if (!use_dst_) {
         // R = exp(s)
         exp_compute_vector_fwd(vmm_src);
@@ -1779,7 +1730,7 @@ void jit_uni_eltwise_injector_f32<isa>::elu_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // res = 1 - d^2 = 1 - tanh^2(s)
     if (!use_dst_) tanh_compute_vector_fwd(vmm_src);
     h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(one))));
@@ -1793,15 +1744,15 @@ void jit_uni_eltwise_injector_f32<isa>::tanh_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_src)));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     }
@@ -1812,33 +1763,33 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_bwd(
 
     // keep G2 in a separate register
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux2)),
                 ZRegD(IDX(table_val(gelu_tanh_fitting_const_times_three))));
         h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(gelu_tanh_fitting_const_times_three))));
         h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_aux2)), p_lsb / T_m, ZRegS(IDX(vmm_src)),
+    h->fmad(ZRegS(IDX(vmm_aux2)), p_512 / T_m, ZRegS(IDX(vmm_src)),
             ZRegS(IDX(table_val(one))));
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)),
                 ZRegD(IDX(table_val(gelu_tanh_fitting_const))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(gelu_tanh_fitting_const))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
     h->fmul(ZReg(IDX(vmm_aux0)).s, ZReg(IDX(vmm_aux0)).s,
             ZReg(IDX(table_val(gelu_tanh_sqrt_two_over_pi))).s);
@@ -1887,7 +1838,7 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_tanh_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::square_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // res = 2 * s
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
             ZReg(IDX(table_val(two))).s);
@@ -1895,7 +1846,7 @@ void jit_uni_eltwise_injector_f32<isa>::square_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::abs_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // replace positive values with 1.f
     compute_cmp_mask(vmm_src, table_val(zero), _cmp_gt_os);
     blend_with_mask(vmm_src, table_val(one));
@@ -1906,7 +1857,7 @@ void jit_uni_eltwise_injector_f32<isa>::abs_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::sqrt_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // res = 0.5 / d = 0.5 / sqrt(s)
     if (!use_dst_) sqrt_compute_vector_fwd(vmm_src);
     h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(half))));
@@ -1919,13 +1870,13 @@ void jit_uni_eltwise_injector_f32<isa>::sqrt_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::linear_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(alpha))));
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // get mask of values > alpha and blend with 0.f
     compute_cmp_mask(vmm_src, table_val(alpha), _cmp_gt_os);
     blend_with_mask(vmm_src, table_val(zero));
@@ -1943,24 +1894,24 @@ void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     logistic_compute_vector_fwd(vmm_src);
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // res = d * (1 - d) = d - d * d; d = logistic(s)
     if (!use_dst_) logistic_compute_vector_fwd(vmm_src);
     // h->uni_vfnmadd231ps(vmm_src, vmm_src, vmm_src); // bless sse41
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     }
@@ -1972,13 +1923,13 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     if (!use_dst_) exp_compute_vector_fwd(vmm_src);
 }
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::swish_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // R = alpha * s
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
             ZReg(IDX(table_val(alpha))).s);
@@ -2021,16 +1972,16 @@ void jit_uni_eltwise_injector_f32<isa>::swish_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // res = 1 / s
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     }
@@ -2039,13 +1990,13 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_bwd(
     h->fdiv(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux0)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux0)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -2053,16 +2004,16 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // set result with 1.f
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
@@ -2075,13 +2026,13 @@ void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_bwd(
     blend_with_mask(vmm_aux1, table_val(zero));
 
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux1)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -2089,19 +2040,19 @@ void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // dispatch some special cases.
     if (beta_ == 0) { // zero
         /* This route has not been tested */
         if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
             h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(zero))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         } else {
             /* This route has not been tested */
             h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+                    PRegB(IDX(p_512)));
+            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                     ZRegS(IDX(table_val(zero))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         }
@@ -2111,14 +2062,14 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_bwd(
                 ZReg(IDX(table_val(alpha))).s);
     } else if (beta_ == 1) { // alpha
         if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
             h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         } else {
             /* This route has not been tested */
             h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+                    PRegB(IDX(p_512)));
+            h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                     ZRegS(IDX(table_val(alpha))));
             h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
         }
@@ -2161,7 +2112,7 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_bwd(
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_bwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     // R = s / sqrt(2)
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
             ZReg(IDX(table_val(gelu_erf_one_over_sqrt_two))).s);
@@ -2223,29 +2174,29 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_bwd(
 
     // W = 1 / (p * s + 1)
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux3)),
                 ZRegD(IDX(table_val(gelu_erf_approx_const))));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(gelu_erf_approx_const))));
         h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
     }
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux4)), ZRegD(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux4)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux4)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(one))));
         h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(vmm_aux4)));
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE, h->P_ALL_ONE.b);
     h->fdiv(ZRegS(IDX(vmm_aux4)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_aux3)));
@@ -2255,27 +2206,27 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_bwd(
 
     // compute polynomial r
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(gelu_erf_pol, 4))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(table_val(gelu_erf_pol, 4))));
         h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     }
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 3))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
+    h->fmad(ZRegS(IDX(vmm_aux1)), p_512 / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 0))));
 
     // erf = sign * (1 - r * t * exp(-x*x))
-    h->fmad(ZRegS(IDX(vmm_src)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
     h->eor(ZReg(IDX(vmm_src)).d, ZReg(IDX(vmm_src)).d, ZReg(IDX(vmm_aux0)).d);
 
@@ -2287,13 +2238,13 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_bwd(
     h->fmla(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_tmp0)) / T_m, ZRegS(IDX(vmm_src)),
             ZRegS(IDX(table_val(half))));
     if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_512)));
         h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux2)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     } else {
         /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
+        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_512)));
+        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_512)) / T_m,
                 ZRegS(IDX(vmm_aux2)));
         h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
     }
@@ -2313,7 +2264,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_gprs_count() {
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::round_compute_vector_fwd(
-        const Vmm &vmm_src) {
+        const TRegS &vmm_src) {
     h->frintn(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_src)));
 }
 
@@ -2392,84 +2343,92 @@ void jit_uni_eltwise_injector_f32<isa>::compute_body(
                 case eltwise_relu_use_dst_for_bwd:
                 case eltwise_relu:
                     if (alpha_ == 0.f)
-                        relu_zero_ns_compute_vector_fwd(Vmm(idx));
+                        relu_zero_ns_compute_vector_fwd(TRegS(idx));
                     else
-                        relu_compute_vector_fwd(Vmm(idx));
+                        relu_compute_vector_fwd(TRegS(idx));
                     break;
                 case eltwise_elu_use_dst_for_bwd:
-                case eltwise_elu: elu_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_elu: elu_compute_vector_fwd(TRegS(idx)); break;
                 case eltwise_tanh_use_dst_for_bwd:
-                case eltwise_tanh: tanh_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_square: square_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_abs: abs_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_tanh: tanh_compute_vector_fwd(TRegS(idx)); break;
+                case eltwise_square:
+                    square_compute_vector_fwd(TRegS(idx));
+                    break;
+                case eltwise_abs: abs_compute_vector_fwd(TRegS(idx)); break;
                 case eltwise_sqrt_use_dst_for_bwd:
-                case eltwise_sqrt: sqrt_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_swish: swish_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_linear: linear_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_sqrt: sqrt_compute_vector_fwd(TRegS(idx)); break;
+                case eltwise_swish: swish_compute_vector_fwd(TRegS(idx)); break;
+                case eltwise_linear:
+                    linear_compute_vector_fwd(TRegS(idx));
+                    break;
                 case eltwise_bounded_relu:
-                    bounded_relu_compute_vector_fwd(Vmm(idx));
+                    bounded_relu_compute_vector_fwd(TRegS(idx));
                     break;
                 case eltwise_soft_relu:
-                    soft_relu_compute_vector_fwd(Vmm(idx));
+                    soft_relu_compute_vector_fwd(TRegS(idx));
                     break;
                 case eltwise_logistic_use_dst_for_bwd:
                 case eltwise_logistic:
-                    logistic_compute_vector_fwd(Vmm(idx));
+                    logistic_compute_vector_fwd(TRegS(idx));
                     break;
                 case eltwise_exp_use_dst_for_bwd:
-                case eltwise_exp: exp_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_exp: exp_compute_vector_fwd(TRegS(idx)); break;
                 case eltwise_gelu_tanh:
-                    gelu_tanh_compute_vector_fwd(Vmm(idx));
+                    gelu_tanh_compute_vector_fwd(TRegS(idx));
                     break;
-                case eltwise_log: log_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_clip: clip_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_pow: pow_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_log: log_compute_vector_fwd(TRegS(idx)); break;
+                case eltwise_clip: clip_compute_vector_fwd(TRegS(idx)); break;
+                case eltwise_pow: pow_compute_vector_fwd(TRegS(idx)); break;
                 case eltwise_gelu_erf:
-                    gelu_erf_compute_vector_fwd(Vmm(idx));
+                    gelu_erf_compute_vector_fwd(TRegS(idx));
                     break;
-                case eltwise_round: round_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_round: round_compute_vector_fwd(TRegS(idx)); break;
                 default: assert(!"unsupported eltwise algorithm");
             }
         } else {
             switch (alg_) {
                 case eltwise_relu_use_dst_for_bwd:
-                case eltwise_relu: relu_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_relu: relu_compute_vector_bwd(TRegS(idx)); break;
                 case eltwise_elu_use_dst_for_bwd:
-                case eltwise_elu: elu_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_elu: elu_compute_vector_bwd(TRegS(idx)); break;
                 case eltwise_tanh_use_dst_for_bwd:
-                case eltwise_tanh: tanh_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_square: square_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_abs: abs_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_tanh: tanh_compute_vector_bwd(TRegS(idx)); break;
+                case eltwise_square:
+                    square_compute_vector_bwd(TRegS(idx));
+                    break;
+                case eltwise_abs: abs_compute_vector_bwd(TRegS(idx)); break;
                 case eltwise_sqrt_use_dst_for_bwd:
-                case eltwise_sqrt: sqrt_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_linear: linear_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_sqrt: sqrt_compute_vector_bwd(TRegS(idx)); break;
+                case eltwise_linear:
+                    linear_compute_vector_bwd(TRegS(idx));
+                    break;
                 case eltwise_bounded_relu:
-                    bounded_relu_compute_vector_bwd(Vmm(idx));
+                    bounded_relu_compute_vector_bwd(TRegS(idx));
                     break;
                 case eltwise_soft_relu:
-                    soft_relu_compute_vector_bwd(Vmm(idx));
+                    soft_relu_compute_vector_bwd(TRegS(idx));
                     break;
                 case eltwise_logistic_use_dst_for_bwd:
                 case eltwise_logistic:
-                    logistic_compute_vector_bwd(Vmm(idx));
+                    logistic_compute_vector_bwd(TRegS(idx));
                     break;
                 case eltwise_exp_use_dst_for_bwd:
-                case eltwise_exp: exp_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_exp: exp_compute_vector_bwd(TRegS(idx)); break;
                 case eltwise_gelu_tanh:
-                    gelu_tanh_compute_vector_bwd(Vmm(idx));
+                    gelu_tanh_compute_vector_bwd(TRegS(idx));
                     break;
-                case eltwise_swish: swish_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_log: log_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_clip: clip_compute_vector_bwd(Vmm(idx)); break;
-                case eltwise_pow: pow_compute_vector_bwd(Vmm(idx)); break;
+                case eltwise_swish: swish_compute_vector_bwd(TRegS(idx)); break;
+                case eltwise_log: log_compute_vector_bwd(TRegS(idx)); break;
+                case eltwise_clip: clip_compute_vector_bwd(TRegS(idx)); break;
+                case eltwise_pow: pow_compute_vector_bwd(TRegS(idx)); break;
                 case eltwise_gelu_erf:
-                    gelu_erf_compute_vector_bwd(Vmm(idx));
+                    gelu_erf_compute_vector_bwd(TRegS(idx));
                     break;
                 default: assert(!"unsupported eltwise algorithm");
             }
         }
         if (scale_ != 1.f) {
-            h->fmul(ZReg(IDX(Vmm(idx))).s, ZReg(IDX(Vmm(idx))).s,
+            h->fmul(ZReg(IDX(TRegS(idx))).s, ZReg(IDX(TRegS(idx))).s,
                     ZReg(IDX(table_val(scale))).s);
         }
     });

@@ -65,7 +65,7 @@ template <cpu_isa_t isa>
 struct jit_uni_i8i8_pooling_fwd_ker_t : public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_i8i8_pooling_fwd_ker_t)
 
-    using Vmm = typename cpu_isa_traits<isa>::Vmm;
+    using Vmm = typename cpu_isa_traits<isa>::TReg;
 
     /*
     Xmm xreg(int idx) const { return Xmm(idx); }
@@ -344,7 +344,8 @@ void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::load_src_max_op(
   */
 }
 
-template <>
+#if 0
+  template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::load_src_max_op(
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::load_src_max_op(
         int jj, int ll, size_t offset, bool masked, uint64_t msk) {
@@ -404,6 +405,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::load_src_max_op(
         vmovups(vreg_src(jj), ptr[aux_reg_src_w + offset]);
   */
 };
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::load_src_max_op(
@@ -468,6 +470,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::load_src_avg_op(
   */
 }
 
+#if 0
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::load_src_avg_op(
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::load_src_avg_op(
@@ -563,6 +566,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::load_src_avg_op(
     }
   */
 };
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::load_src_avg_op(
@@ -668,6 +672,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::store_dst_max_op(
   */
 }
 
+#if 0
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::store_dst_max_op(
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::store_dst_max_op(
@@ -742,6 +747,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::store_dst_max_op(
         vmovups(ptr[reg_ptr_dst_i8 + offset], vreg_dst(jj));
   */
 }
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::store_dst_max_op(
@@ -807,6 +813,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::store_dst_avg_op(
   */
 }
 
+#if 0
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::store_dst_avg_op(
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::store_dst_avg_op(
@@ -911,6 +918,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::store_dst_avg_op(
     }
   */
 }
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::store_dst_avg_op
@@ -1008,6 +1016,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::compute_max_op(const int jj) {
   */
 }
 
+#if 0
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::compute_max_op(const int jj) {
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::compute_max_op(const int jj) {
@@ -1021,6 +1030,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::compute_max_op(const int jj) {
     }
   */
 }
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::compute_max_op(const int jj) {
@@ -1557,6 +1567,7 @@ template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<sse41>::init_mask() {}
 void jit_uni_i8i8_pooling_fwd_ker_t<asimd>::init_mask() {}
 
+#if 0
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::init_mask() {
 void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::init_mask() {
@@ -1671,6 +1682,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_256>::init_mask() {
     }
   */
 }
+#endif //#if 0
 
 template <>
 //void jit_uni_i8i8_pooling_fwd_ker_t<avx512_core>::init_mask() {
@@ -2133,12 +2145,12 @@ template struct jit_uni_i8i8_pooling_fwd_t<avx2>;
 template struct jit_uni_i8i8_pooling_fwd_ker_t<sse41>;
 template struct jit_uni_i8i8_pooling_fwd_t<sse41>;
  */
-#if 0 // kawakami
-template struct jit_uni_i8i8_pooling_fwd_ker_t<sve_512>;
-template struct jit_uni_i8i8_pooling_fwd_t<sve_512>;
+#if 1 // kawakami
+//template struct jit_uni_i8i8_pooling_fwd_ker_t<sve_512>;
+//template struct jit_uni_i8i8_pooling_fwd_t<sve_512>;
 
-template struct jit_uni_i8i8_pooling_fwd_ker_t<asimd>;
-template struct jit_uni_i8i8_pooling_fwd_t<asimd>;
+//template struct jit_uni_i8i8_pooling_fwd_ker_t<asimd>;
+//template struct jit_uni_i8i8_pooling_fwd_t<asimd>;
 #endif //#if 0 // kawakami
 } // namespace aarch64
 } // namespace cpu
