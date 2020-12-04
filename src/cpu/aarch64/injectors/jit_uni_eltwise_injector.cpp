@@ -2431,6 +2431,8 @@ void jit_uni_eltwise_injector_f32<isa>::round_compute_vector_fwd(
 template <cpu_isa_t isa>
 size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
     using namespace alg_kind;
+
+#if 0
     if (is_fwd_) {
         switch (alg_) {
             case eltwise_relu_use_dst_for_bwd:
@@ -2495,8 +2497,8 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             default: assert(!"unsupported eltwise algorithm");
         }
     }
-
-    return 0;
+#endif
+    return 9;
 }
 
 template <cpu_isa_t isa>
