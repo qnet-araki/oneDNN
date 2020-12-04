@@ -1000,41 +1000,28 @@ void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_fwd(
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
         const Vmm &vmm_src) {
-    // keep src for further computations
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux2)), ZRegD(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
-    }
+    // ln(1 + exp(x)) =
+    // = ln(1 + exp(n * ln(2) + r)) // divide x by ln(2) and get quot and rem
+    // = ln(1 + 2^n * exp(r)) // simplify the exp(n*ln(2)) expression
+    // = ln(2 ^ 0 + 2^n * exp(r)) // note 1 = 2^0
+    // = ln(2 ^ (n - n) + 2^n * exp(r)) // 2^0 = 2^(n-n)
+    // = ln(2 ^ n * (2^-n + exp(r))) // factorize with 2^n
+    // = n * ln(2) + ln(2^-n + exp(r)) // take the 2^n factor out of the ln
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_max_f))));
-    h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+
+    // keep src for further computations
+    h->mov(ZRegD(IDX(vmm_aux2)), ZRegD(IDX(vmm_src)));
+
+    h->fminnm(ZRegS(IDX(table_val(exp_ln_flt_max_f))), PReg(IDX(p_tmp0)),
+            ZRegS(IDX(vmm_src)));
     h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
-
-    h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(exp_ln_flt_min_f))));
-    h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
+    h->fmaxnm(ZRegS(IDX(table_val(exp_ln_flt_min_f))), PReg(IDX(p_tmp0)),
+            ZRegS(IDX(vmm_src)));
     h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    }
+    h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_src)));
 
     // calculate exp(x)
     // fx = x * log2ef + 0.5
@@ -1044,75 +1031,64 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
             ZReg(IDX(table_val(half))).s);
 
     // tmp = floorf(fx)
-    h->frintm(ZRegS(IDX(vmm_aux0)), p_512 / T_m, ZRegS(IDX(vmm_src)));
+    h->frintm(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, ZRegS(IDX(vmm_src)));
 
     // keep vmm_src = fx for further computations
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux0)));
-        h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_src)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_aux0)));
-        h->mov(ZRegS(IDX(vmm_src)), p_tmp0 / T_m, 0);
-    }
+    h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(vmm_aux0)));
 
     // x = x - fx * ln2
     h->fmul(ZReg(IDX(vmm_aux0)).s, ZReg(IDX(vmm_aux0)).s,
             ZReg(IDX(table_val(ln2f))).s);
     h->fsub(ZReg(IDX(vmm_aux1)).s, ZReg(IDX(vmm_aux1)).s,
             ZReg(IDX(vmm_aux0)).s);
-
     // compute exponent polynomial
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(table_val(exp_pol, 4))));
-        h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(table_val(exp_pol, 4))));
-        h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
-    }
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(table_val(exp_pol, 4))));
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 3))));
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 2))));
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 1))));
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(exp_pol, 0))));
-    h->fmad(ZRegS(IDX(vmm_aux3)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
+    h->fmad(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
 
-    // compute 2^(-n)
+    // We do not count 2^-n here, because n can reach 128 and 2^(-128) is not
+    // representable by fp32, so to get around this problem, instead of computing
+    // 2^-n + exp(r) will be counted (2^-(n-1) + 2*exp(r))/2, because 2^(-127)
+    // and 2 are numbers representable in fp32.
+
+    // compute 2^-(n-1)
+    // vmm_src now represents n-1
+    h->fsub(ZRegS(IDX(vmm_src)), ZRegS(IDX(vmm_src)),
+            ZRegS(IDX(table_val(one))));
     h->fmul(ZReg(IDX(vmm_aux1)).s, ZReg(IDX(vmm_src)).s,
             ZReg(IDX(table_val(minus_one))).s);
 
-    h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE / T_z, h->P_ALL_ONE.b);
     h->frinti(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_tmp0)) / T_m,
             ZRegS(IDX(vmm_aux1)));
     h->fcvtzs(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_tmp0)) / T_m,
             ZRegS(IDX(vmm_aux1)));
+    // restore vmm_src to n
+    h->fadd(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
+            ZReg(IDX(table_val(one))).s);
 
     h->add(ZReg(IDX(vmm_aux1)).s, ZReg(IDX(vmm_aux1)).s,
             ZReg(IDX(table_val(exponent_bias))).s);
-    h->lsl(ZRegS(IDX(vmm_aux1)), ZRegS(IDX(vmm_aux1)),
-            n_mantissa_bits); //vmm_aux1 = 2^-fx
-
+    h->lsl(ZRegS(IDX(vmm_aux1)), ZRegS(IDX(vmm_aux1)), n_mantissa_bits);
     // calculate ln(1 + y)
+    h->fmul(ZReg(IDX(vmm_aux3)).s, ZReg(IDX(vmm_aux3)).s,
+            ZReg(IDX(table_val(two))).s); // 2*exp(r)
     h->fadd(ZReg(IDX(vmm_aux3)).s, ZReg(IDX(vmm_aux3)).s,
-            ZReg(IDX(vmm_aux1)).s);
+            ZReg(IDX(vmm_aux1)).s); // 2^-(n-1) + 2*exp(r)
+    h->fdiv(ZReg(IDX(vmm_aux3)).s, PReg(IDX(p_tmp0)) / T_m,
+            ZReg(IDX(table_val(two))).s); // (2^-(n-1) + 2*exp(r))/2
+
     // frexp()
     h->lsr(ZRegS(IDX(vmm_src)), ZRegS(IDX(vmm_aux3)), n_mantissa_bits);
-
-    h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
     h->scvtf(ZReg(IDX(vmm_src)).s, PReg(IDX(p_tmp0)) / T_m,
             ZReg(IDX(vmm_src)).s);
-
     // got n. where n is x = 2^n * y. y = 0.5 .. 1
     h->fsub(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
             ZReg(IDX(table_val(soft_relu_one_twenty_six))).s);
@@ -1120,27 +1096,15 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
     // and with mask (to get 0.5 * mantissa)
     h->and_(ZReg(IDX(vmm_aux3)).d, ZReg(IDX(vmm_aux3)).d,
             ZReg(IDX(table_val(soft_relu_mantissa_sign_mask))).d);
-
     // got y. (mantisa)  0.5 < y < 1 (or with (to get 0.5 * mantissa))
     h->orr(ZReg(IDX(vmm_aux3)).d, ZReg(IDX(vmm_aux3)).d,
             ZReg(IDX(table_val(half))).d);
-
     // y  = y - 1
     h->fsub(ZReg(IDX(vmm_aux3)).s, ZReg(IDX(vmm_aux3)).s,
             ZReg(IDX(table_val(one))).s);
 
     // compute log1p polynomial
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(soft_relu_pol, 8))));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(table_val(soft_relu_pol, 8))));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    }
+    h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(soft_relu_pol, 8))));
     h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
             ZRegS(IDX(table_val(soft_relu_pol, 7))));
     h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux3)),
