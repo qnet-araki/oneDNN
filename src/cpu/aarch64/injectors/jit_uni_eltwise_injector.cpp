@@ -1666,17 +1666,9 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
             ZReg(IDX(table_val(gelu_erf_one_over_sqrt_two))).s);
 
     // IMPORTANT: we use vmm_aux3 to save `x` as exp_compute does not use it.
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux3)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_src)));
-        h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
-    }
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_src)));
+    h->mov(ZRegS(IDX(vmm_aux3)), p_tmp0 / T_m, 0);
 
     // -exp(-x*x)
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s);
@@ -1688,60 +1680,28 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
             ZReg(IDX(table_val(sign_mask))).d);
 
     // get sign
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(vmm_aux3)));
-        h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux0)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_aux3)));
-        h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
-    }
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux0)), ZRegD(IDX(vmm_aux3)));
+    h->mov(ZRegS(IDX(vmm_aux0)), p_tmp0 / T_m, 0);
     h->and_(ZReg(IDX(vmm_aux0)).d, ZReg(IDX(vmm_aux0)).d,
             ZReg(IDX(table_val(sign_mask))).d);
 
     // abs(x)
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_aux3)));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(vmm_aux3)));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    }
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(vmm_aux3)));
+    h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
     abs_compute_vector_fwd(vmm_aux1);
 
     // t = 1 / (p*x + 1)
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux2)),
-                ZRegD(IDX(table_val(gelu_erf_approx_const))));
-        h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux2)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(table_val(gelu_erf_approx_const))));
-        h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
-    }
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux2)), ZRegD(IDX(table_val(gelu_erf_approx_const))));
+    h->mov(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, 0);
     h->fmad(ZRegS(IDX(vmm_aux2)), p_lsb / T_m, ZRegS(IDX(vmm_aux1)),
             ZRegS(IDX(table_val(one))));
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux4)), ZRegD(IDX(table_val(one))));
-        h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux4)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(table_val(one))));
-        h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
-    }
+
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux4)), ZRegD(IDX(table_val(one))));
+    h->mov(ZRegS(IDX(vmm_aux4)), p_tmp0 / T_m, 0);
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE, h->P_ALL_ONE.b);
     h->fdiv(ZRegS(IDX(vmm_aux4)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_aux2)));
 
@@ -1749,17 +1709,10 @@ void jit_uni_eltwise_injector_f32<isa>::gelu_erf_compute_vector_fwd(
     h->fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_aux4)).s);
 
     // compute polynomialial r
-    if (vlen != 32) {
-        h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-        h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(gelu_erf_pol, 4))));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    } else {
-        /* This route has not been tested */
-        h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b, PRegB(IDX(p_lsb)));
-        h->mov(ZRegS(IDX(vmm_aux1)), PReg(IDX(p_lsb)) / T_m,
-                ZRegS(IDX(table_val(gelu_erf_pol, 4))));
-        h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
-    }
+    h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
+    h->mov(ZRegD(IDX(vmm_aux1)), ZRegD(IDX(table_val(gelu_erf_pol, 4))));
+    h->mov(ZRegS(IDX(vmm_aux1)), p_tmp0 / T_m, 0);
+
     h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
             ZRegS(IDX(table_val(gelu_erf_pol, 3))));
     h->fmad(ZRegS(IDX(vmm_aux1)), p_lsb / T_m, ZRegS(IDX(vmm_aux4)),
@@ -2381,10 +2334,8 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_sqrt_use_dst_for_bwd:
             case eltwise_sqrt: return 0;
             case eltwise_linear: return 2;
-            case eltwise_bounded_relu:
-                return 1;
-                //            case eltwise_soft_relu: return 5;
-            case eltwise_soft_relu: return 9;
+            case eltwise_bounded_relu: return 1;
+            case eltwise_soft_relu: return 5;
             case eltwise_logistic_use_dst_for_bwd:
             case eltwise_logistic: return 5; /* = exp + 1 */
             case eltwise_exp_use_dst_for_bwd:
@@ -2393,10 +2344,8 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_swish: return 6; /* = logistic */
             case eltwise_log: return 5;
             case eltwise_clip: return 1;
-            case eltwise_pow:
-                return 3;
-                //            case eltwise_gelu_erf: return 5; /* = exp + 1 */
-            case eltwise_gelu_erf: return 9; /* = exp + 1 */
+            case eltwise_pow: return 3;
+            case eltwise_gelu_erf: return 6;
             case eltwise_round: return 0;
             default: assert(!"unsupported eltwise algorithm");
         }
@@ -2413,10 +2362,8 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_sqrt_use_dst_for_bwd:
             case eltwise_sqrt: return 2;
             case eltwise_linear: return 1;
-            case eltwise_bounded_relu:
-                return 1;
-                //	case eltwise_soft_relu: return 5; /* = logistic */
-            case eltwise_soft_relu: return 9; /* = logistic */
+            case eltwise_bounded_relu: return 1;
+            case eltwise_soft_relu: return 5; /* = logistic */
             case eltwise_logistic_use_dst_for_bwd: return 2;
             case eltwise_logistic: return 5; /* = logistic */
             case eltwise_exp_use_dst_for_bwd: return 0;
@@ -2425,10 +2372,8 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_swish: return 6; /* = logistic */
             case eltwise_log: return 2;
             case eltwise_clip: return 3;
-            case eltwise_pow:
-                return 3;
-                //            case eltwise_gelu_erf: return 6;
-            case eltwise_gelu_erf: return 9;
+            case eltwise_pow: return 3;
+            case eltwise_gelu_erf: return 6;
             default: assert(!"unsupported eltwise algorithm");
         }
     }
