@@ -1256,26 +1256,9 @@ void jit_uni_eltwise_injector_f32<isa>::logistic_compute_vector_fwd(
     }
     h->fsub(ZReg(IDX(vmm_aux2)).s, ZReg(IDX(vmm_aux2)).s, ZReg(IDX(vmm_src)).s);
 
-    if (has_avx512()) {
-        h->movs(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-        h->and_(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_aux3)));
-        h->cmpne(PRegS(IDX(p_mask)), PReg(IDX(p_tmp0)) / T_z, ZRegS(IDX(z_tmp)),
-                0);
-    } else {
-        //        h->uni_vh->movups(vmm_mask, vmm_aux3);
-        if (vlen != 32) {
-            h->not_(p_tmp0.b, h->P_ALL_ONE / T_z, PRegB(IDX(p_lsb)));
-            h->mov(ZRegD(IDX(vmm_mask)), ZRegD(IDX(vmm_aux3)));
-            h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
-        } else {
-            /* This route has not been tested */
-            h->orn(p_tmp0.b, h->P_ALL_ONE / T_z, h->P_MSB_384.b,
-                    PRegB(IDX(p_lsb)));
-            h->mov(ZRegS(IDX(vmm_mask)), PReg(IDX(p_lsb)) / T_m,
-                    ZRegS(IDX(vmm_aux3)));
-            h->mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m, 0);
-        }
-    }
+    h->movs(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
+    h->and_(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_aux3)), ZRegD(IDX(vmm_aux3)));
+    h->cmpne(PRegS(IDX(p_mask)), PReg(IDX(p_tmp0)) / T_z, ZRegS(IDX(z_tmp)), 0);
 
     blend_with_mask(vmm_aux2, vmm_src);
 
@@ -1383,26 +1366,20 @@ void jit_uni_eltwise_injector_f32<isa>::log_compute_vector_fwd(
     assert(it != entry_map_.end());
     const auto table_start_idx = (*it).second.off;
 
-    auto gather_table_values
-            = [&](const Vmm &vmm_dst, const Vmm &vmm_idxs, size_t offt = 0) {
-                  if (has_avx512()) {
-                      XReg x_addr(h->X_DEFAULT_ADDR);
-                      h->ptrue(PRegS(IDX(p_mask)), VL16);
-                      h->add_imm(x_addr, XReg(IDX(x_table)),
-                              table_start_idx + offt, x_tmp_1);
+    auto gather_table_values = [&](const Vmm &vmm_dst, const Vmm &vmm_idxs,
+                                       size_t offt = 0) {
+        XReg x_addr(h->X_DEFAULT_ADDR);
+        h->ptrue(PRegS(IDX(p_mask)), VL16);
+        h->add_imm(x_addr, XReg(IDX(x_table)), table_start_idx + offt, x_tmp_1);
 
-                      h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_idxs)));
-                      h->mul(ZRegS(IDX(z_tmp)), 4);
+        h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vmm_idxs)));
+        h->mul(ZRegS(IDX(z_tmp)), 4);
 
-                      h->ld1w(ZRegS(IDX(z_tmp)), PReg(IDX(p_mask)) / T_z,
-                              ptr(x_addr, ZRegS(IDX(z_tmp)), SXTW));
-                      h->mov(ZRegS(IDX(vmm_dst)), PReg(IDX(p_mask)) / T_m,
-                              ZRegS(IDX(z_tmp)));
-                      h->pfalse(PRegB(IDX(p_mask)));
-                  } else {
-                      assert(!"unsupported");
-                  }
-              };
+        h->ld1w(ZRegS(IDX(z_tmp)), PReg(IDX(p_mask)) / T_z,
+                ptr(x_addr, ZRegS(IDX(z_tmp)), SXTW));
+        h->mov(ZRegS(IDX(vmm_dst)), PReg(IDX(p_mask)) / T_m, ZRegS(IDX(z_tmp)));
+        h->pfalse(PRegB(IDX(p_mask)));
+    };
 
     // get r_i, same as table(i)
     gather_table_values(vmm_aux2, vmm_aux1, 0);
@@ -1586,14 +1563,12 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
 
         // caller obligation to save k-regs as callee may use them
         size_t n_k_regs_to_save = 8;
-        if (has_avx512()) {
-            h->sub_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
-                    n_k_regs_to_save * k_mask_size, x_tmp_0);
-            for (size_t i = 0; i < n_k_regs_to_save; ++i) {
-                h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)),
-                        i * k_mask_size, XReg(IDX(x_tmp_1)));
-                h->str(PReg(static_cast<uint32_t>(i)), ptr(XReg(IDX(x_tmp_0))));
-            }
+        h->sub_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
+                n_k_regs_to_save * k_mask_size, x_tmp_0);
+        for (size_t i = 0; i < n_k_regs_to_save; ++i) {
+            h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), i * k_mask_size,
+                    XReg(IDX(x_tmp_1)));
+            h->str(PReg(static_cast<uint32_t>(i)), ptr(XReg(IDX(x_tmp_0))));
         }
 
         // 1. Caller obligation to save vector registers as callee may use them.
@@ -1716,15 +1691,13 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
         h->add_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
                 (vecs_count + 2) * vlen, x_tmp_0);
         // restore k registers
-        if (has_avx512()) {
-            for (int i = n_k_regs_to_save - 1; i >= 0; --i) {
-                h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)),
-                        i * k_mask_size, XReg(IDX(x_tmp_1)));
-                h->ldr(PReg(static_cast<uint32_t>(i)), ptr(XReg(IDX(x_tmp_0))));
-            }
-            h->add_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
-                    n_k_regs_to_save * k_mask_size, XReg(IDX(x_tmp_0)));
+        for (int i = n_k_regs_to_save - 1; i >= 0; --i) {
+            h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), i * k_mask_size,
+                    XReg(IDX(x_tmp_1)));
+            h->ldr(PReg(static_cast<uint32_t>(i)), ptr(XReg(IDX(x_tmp_0))));
         }
+        h->add_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
+                n_k_regs_to_save * k_mask_size, XReg(IDX(x_tmp_0)));
 
         // restore gpr registers
         for (int i = n_gprs_to_save - 1; i >= 0; --i) {
@@ -2474,7 +2447,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_bounded_relu:
                 return 1;
                 //            case eltwise_soft_relu: return 5;
-            case eltwise_soft_relu: return 10;
+            case eltwise_soft_relu: return 9;
             case eltwise_logistic_use_dst_for_bwd:
             case eltwise_logistic: return 5; /* = exp + 1 */
             case eltwise_exp_use_dst_for_bwd:
@@ -2483,8 +2456,10 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_swish: return 6; /* = logistic */
             case eltwise_log: return 5;
             case eltwise_clip: return 1;
-            case eltwise_pow: return 3;
-            case eltwise_gelu_erf: return 5; /* = exp + 1 */
+            case eltwise_pow:
+                return 3;
+                //            case eltwise_gelu_erf: return 5; /* = exp + 1 */
+            case eltwise_gelu_erf: return 9; /* = exp + 1 */
             case eltwise_round: return 0;
             default: assert(!"unsupported eltwise algorithm");
         }
@@ -2504,7 +2479,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_bounded_relu:
                 return 1;
                 //	case eltwise_soft_relu: return 5; /* = logistic */
-            case eltwise_soft_relu: return 10; /* = logistic */
+            case eltwise_soft_relu: return 9; /* = logistic */
             case eltwise_logistic_use_dst_for_bwd: return 2;
             case eltwise_logistic: return 5; /* = logistic */
             case eltwise_exp_use_dst_for_bwd: return 0;
@@ -2513,8 +2488,10 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_vecs_count() {
             case eltwise_swish: return 6; /* = logistic */
             case eltwise_log: return 2;
             case eltwise_clip: return 3;
-            case eltwise_pow: return 3;
-            case eltwise_gelu_erf: return 6;
+            case eltwise_pow:
+                return 3;
+                //            case eltwise_gelu_erf: return 6;
+            case eltwise_gelu_erf: return 9;
             default: assert(!"unsupported eltwise algorithm");
         }
     }

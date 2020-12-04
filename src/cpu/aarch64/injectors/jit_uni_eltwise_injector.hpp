@@ -145,14 +145,12 @@ private:
         _op_mxcsr = jit_generator::_op_mxcsr
     };
 
-    static constexpr bool has_avx512() { return false; }
-
     static constexpr size_t vlen = cpu_isa_traits<isa>::vlen;
     /* For AArch64, +1 because of memory operand */
     //    static constexpr size_t preserved_vecs_max = 6;
     static constexpr size_t preserved_vecs_max = 9; //[info]
     static constexpr size_t preserved_gprs_max = 4;
-    static constexpr size_t vecs_count = has_avx512() ? 32 : 16;
+    static constexpr size_t vecs_count = 32;
     static constexpr int n_mantissa_bits = 23;
     static constexpr int k_mask_size = 8;
 
