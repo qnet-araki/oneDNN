@@ -478,6 +478,7 @@ void jit_uni_eltwise_injector_f32<isa>::blend_with_mask(
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
         const Vmm &vmm_src) {
+
     // exp(x) =
     // = exp(n * ln(2) + r) // divide x by ln(2) and get quot and rem
     // = 2^n * exp(r) // simplify the exp(n*ln(2)) expression
@@ -506,6 +507,7 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
             ZReg(IDX(table_val(half))).s);
 
     // tmp = floorf(fx)
+
     h->frintm(ZRegS(IDX(vmm_aux2)), p_tmp0 / T_m, ZRegS(IDX(vmm_src)));
 
     // keep vmm_src = fx for further computations
@@ -967,14 +969,13 @@ template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_fwd(
         const Vmm &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    //    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
-    table_val(zero);
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    table_val(alpha);
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
     h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
@@ -984,15 +985,13 @@ template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::clip_compute_vector_fwd(
         const Vmm &vmm_src) {
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    //    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
-    table_val(alpha);
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(alpha))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
 
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    //    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(beta))));
-    table_val(beta);
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(beta))));
     h->fminnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmin(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
@@ -1664,6 +1663,7 @@ void jit_uni_eltwise_injector_f32<isa>::pow_compute_vector_fwd(
         h->add_imm(XReg(IDX(h->X_SP)), XReg(IDX(h->X_SP)),
                 (vecs_count + 2) * vlen, x_tmp_0);
         // restore k registers
+
         for (int i = n_k_regs_to_save - 1; i >= 0; --i) {
             h->add_imm(XReg(IDX(x_tmp_0)), XReg(IDX(h->X_SP)), i * k_mask_size,
                     XReg(IDX(x_tmp_1)));
@@ -2014,8 +2014,7 @@ void jit_uni_eltwise_injector_f32<isa>::bounded_relu_compute_vector_bwd(
     blend_with_mask(vmm_src, table_val(zero));
     // make all negative values zeros
     h->mov(PRegB(IDX(p_tmp0)), h->P_ALL_ONE.b);
-    //    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
-    table_val(zero);
+    h->mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(table_val(zero))));
     h->fmaxnm(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->fmax(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp0)), ZRegS(IDX(vmm_src)));
     h->mov(ZRegD(IDX(vmm_src)), ZRegD(IDX(z_tmp)));
