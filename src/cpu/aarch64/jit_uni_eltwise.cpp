@@ -81,16 +81,16 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
 
         XReg param = param1;
 
-        add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(src), x_tmp_1);
-        ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
-        add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(dst), x_tmp_1);
-        ldr(XReg(IDX(reg_dst)), ptr(x_tmp_0));
+        add_imm(x_tmp_0, param, GET_OFF(src), x_tmp_1);
+        ldr(reg_src, ptr(x_tmp_0));
+        add_imm(x_tmp_0, param, GET_OFF(dst), x_tmp_1);
+        ldr(reg_dst, ptr(x_tmp_0));
         if (!is_fwd) {
-            add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(diff_dst), x_tmp_1);
-            ldr(XReg(IDX(reg_diff_dst)), ptr(x_tmp_0));
+            add_imm(x_tmp_0, param, GET_OFF(diff_dst), x_tmp_1);
+            ldr(reg_diff_dst, ptr(x_tmp_0));
         }
-        add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(work_amount), x_tmp_1);
-        ldr(XReg(IDX(reg_work_amount)), ptr(x_tmp_0));
+        add_imm(x_tmp_0, param, GET_OFF(work_amount), x_tmp_1);
+        ldr(reg_work_amount, ptr(x_tmp_0));
 
         eltwise_injector_->load_table_addr();
 
@@ -100,7 +100,7 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         Label vectorized_loop_start, vectorized_loop_end;
 
         mov_imm(x_tmp_0, simd_w());
-        cmp(XReg(IDX(reg_work_amount)), x_tmp_0);
+        cmp(reg_work_amount, x_tmp_0);
         b(LT, reminder_loop_start);
 
         L(vectorized_loop_start);
@@ -116,27 +116,23 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         // can be relevantly easy controlled, this will cost much from code
         // perspective and will complicate the compute logic significantly.
         if (true) {
-            ldr(ZReg(IDX(vmm_src)), ptr(XReg(IDX(reg_src))));
+            ldr(ZReg(IDX(vmm_src)), ptr(reg_src));
             eltwise_injector_->compute_vector(vmm_src.getIdx());
             if (!is_fwd) {
-                ldr(ZReg(IDX(vmm_diff_dst)), ptr(XReg(IDX(reg_diff_dst))));
-                fmul(ZReg(IDX(vmm_src)).s, ZReg(IDX(vmm_src)).s,
-                        ZReg(IDX(vmm_diff_dst)).s);
+                ldr(ZReg(IDX(vmm_diff_dst)), ptr(reg_diff_dst));
+                fmul(vmm_src, vmm_src, vmm_diff_dst);
             }
-            str(ZReg(IDX(vmm_src)), ptr(XReg(IDX(reg_dst))));
+            str(ZReg(IDX(vmm_src)), ptr(reg_dst));
         }
 
         const auto shift = vlen();
-        add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), shift, x_tmp_0);
-        add_imm(XReg(IDX(reg_dst)), XReg(IDX(reg_dst)), shift, x_tmp_0);
-        if (!is_fwd)
-            add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)), shift,
-                    x_tmp_0);
+        add_imm(reg_src, reg_src, shift, x_tmp_0);
+        add_imm(reg_dst, reg_dst, shift, x_tmp_0);
+        if (!is_fwd) add_imm(reg_diff_dst, reg_diff_dst, shift, x_tmp_0);
 
-        sub_imm(XReg(IDX(reg_work_amount)), XReg(IDX(reg_work_amount)),
-                simd_w(), x_tmp_0);
+        sub_imm(reg_work_amount, reg_work_amount, simd_w(), x_tmp_0);
         mov_imm(x_tmp_0, simd_w());
-        cmp(XReg(IDX(reg_work_amount)), x_tmp_0);
+        cmp(reg_work_amount, x_tmp_0);
         b(GE, vectorized_loop_start);
 
         L(vectorized_loop_end);
@@ -144,12 +140,12 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         L(reminder_loop_start);
 
         mov_imm(x_tmp_0, 0);
-        cmp(XReg(IDX(reg_work_amount)), x_tmp_0);
+        cmp(reg_work_amount, x_tmp_0);
         b(LE, reminder_loop_end);
 
         if (true) {
             ptrue(PRegS(IDX(p_tmp0)), VL4);
-            ldr(w_tmp_0, ptr(XReg(IDX(reg_src))));
+            ldr(w_tmp_0, ptr(reg_src));
             mov(ZRegS(IDX(xmm_src)), PReg(IDX(p_tmp0)) / T_m, 0);
             ptrue(PRegS(IDX(p_tmp0)), VL1);
             mov(ZRegS(IDX(xmm_src)), PReg(IDX(p_tmp0)) / T_m, w_tmp_0);
@@ -158,7 +154,7 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
 
             if (!is_fwd) {
                 ptrue(PRegS(IDX(p_tmp0)), VL4);
-                ldr(w_tmp_0, ptr(XReg(IDX(reg_diff_dst))));
+                ldr(w_tmp_0, ptr(reg_diff_dst));
                 mov(ZRegS(IDX(xmm_diff_dst)), PReg(IDX(p_tmp0)) / T_m, 0);
                 ptrue(PRegS(IDX(p_tmp0)), VL1);
                 mov(ZRegS(IDX(xmm_diff_dst)), PReg(IDX(p_tmp0)) / T_m, w_tmp_0);
@@ -172,13 +168,11 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
             st1w(ZRegS(IDX(xmm_src)), PReg(IDX(p_tmp0)),
                     ptr(XReg(IDX(reg_dst))));
         }
-        add_imm(XReg(IDX(reg_src)), XReg(IDX(reg_src)), dtype_size(), x_tmp_0);
-        add_imm(XReg(IDX(reg_dst)), XReg(IDX(reg_dst)), dtype_size(), x_tmp_0);
-        if (!is_fwd)
-            add_imm(XReg(IDX(reg_diff_dst)), XReg(IDX(reg_diff_dst)),
-                    dtype_size(), x_tmp_0);
+        add_imm(reg_src, reg_src, dtype_size(), x_tmp_0);
+        add_imm(reg_dst, reg_dst, dtype_size(), x_tmp_0);
+        if (!is_fwd) add_imm(reg_diff_dst, reg_diff_dst, dtype_size(), x_tmp_0);
 
-        subs(XReg(IDX(reg_work_amount)), XReg(IDX(reg_work_amount)), 1);
+        subs(reg_work_amount, reg_work_amount, 1);
         b(reminder_loop_start);
 
         L(reminder_loop_end);
