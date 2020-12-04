@@ -164,7 +164,7 @@ private:
 
     /* These vector register must be assigned proper index. */
     Vmm vmm_mask {0}, vmm_aux0 {0}, vmm_aux1 {0}, vmm_aux2 {0}, vmm_aux3 {0},
-            vmm_aux4 {0}, vmm_tmp {0};
+            vmm_aux4 {0}, vmm_aux5 {0}, vmm_aux6 {0}, vmm_aux7 {0}, vmm_tmp {0};
 
     /* Caution: Chose predicate registers not used by x64's implementation,
        and register indices must be same as jit_uni_eltwise.cpp
@@ -193,11 +193,6 @@ private:
      This index is changed by assign_regs() in case of eltwise injection.
   */
     Xbyak_aarch64::ZReg z_tmp {31};
-    Xbyak_aarch64::ZReg z_tmp_0 {30};
-    Xbyak_aarch64::ZReg z_tmp_1 {29};
-    Xbyak_aarch64::ZReg z_tmp_2 {28};
-    Xbyak_aarch64::ZReg z_tmp_3 {27};
-    Xbyak_aarch64::ZReg z_tmp_4 {26};
 
     //  const std::vector<ZReg> z_tmp_vec = {
     //    z_tmp0, z_tmp1, z_tmp2, z_tmp3, z_tmp4, z_tmp5, z_tmp6, z_tmp7};

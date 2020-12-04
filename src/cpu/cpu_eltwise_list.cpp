@@ -23,7 +23,7 @@
 #include "cpu/x64/jit_uni_eltwise_int.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
-#include "cpu/laarch64/jit_uni_eltwise.hpp"
+#include "cpu/aarch64/jit_uni_eltwise.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
 
