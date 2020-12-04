@@ -79,11 +79,8 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         const bool is_fwd = pd_->is_fwd();
         preamble();
 
-#if 0
-        Reg64 param = abi_param1; // Unconverted
-#else
         XReg param = param1;
-#endif
+
         add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(src), x_tmp_1);
         ldr(XReg(IDX(reg_src)), ptr(x_tmp_0));
         add_imm(x_tmp_0, XReg(IDX(param)), GET_OFF(dst), x_tmp_1);
@@ -100,11 +97,6 @@ struct jit_uni_kernel_t : public jit_uni_eltwise_kernel {
         ptrue(p_512.b);
         ptrue(p_256.b, VL32);
         ptrue(p_128.b, VL16);
-        if (cpu_isa_traits<isa>::vlen == 32) {
-            p_lsb = p_256;
-        } else if (cpu_isa_traits<isa>::vlen == 16) {
-            p_lsb = p_128;
-        }
 
         Label reminder_loop_start, reminder_loop_end;
         Label vectorized_loop_start, vectorized_loop_end;
@@ -262,6 +254,17 @@ status_t jit_uni_eltwise_fwd_t<isa, d_type>::pd_t::init(engine_t *engine) {
             // refer to a comment in jit_uni_kernel why this is needed
             && IMPLICATION(!data_d.is_dense(), is_zero_preserved())
             && attr()->has_default_values();
+
+    ok &= utils::one_of(desc_.alg_kind, eltwise_relu_use_dst_for_bwd,
+            eltwise_relu, eltwise_elu_use_dst_for_bwd, eltwise_elu,
+            eltwise_tanh_use_dst_for_bwd, eltwise_tanh, eltwise_square,
+            eltwise_abs, eltwise_sqrt_use_dst_for_bwd, eltwise_sqrt,
+            eltwise_linear, eltwise_bounded_relu, eltwise_soft_relu,
+            eltwise_logistic_use_dst_for_bwd, eltwise_logistic,
+            eltwise_exp_use_dst_for_bwd, eltwise_exp, eltwise_gelu_tanh,
+            eltwise_swish, eltwise_log, eltwise_clip, eltwise_gelu_erf,
+            eltwise_round);
+
     return ok ? status::success : status::unimplemented;
 }
 
@@ -325,6 +328,16 @@ status_t jit_uni_eltwise_bwd_t<isa, d_type>::pd_t::init(engine_t *engine) {
             && IMPLICATION(!data_d.is_dense(), is_zero_preserved())
             && data_d == memory_desc_wrapper(diff_dst_md())
             && attr()->has_default_values();
+
+    ok &= utils::one_of(desc_.alg_kind, eltwise_relu_use_dst_for_bwd,
+            eltwise_relu, eltwise_elu_use_dst_for_bwd, eltwise_elu,
+            eltwise_tanh_use_dst_for_bwd, eltwise_tanh, eltwise_square,
+            eltwise_abs, eltwise_sqrt_use_dst_for_bwd, eltwise_sqrt,
+            eltwise_linear, eltwise_bounded_relu, eltwise_soft_relu,
+            eltwise_logistic_use_dst_for_bwd, eltwise_logistic,
+            eltwise_exp_use_dst_for_bwd, eltwise_exp, eltwise_gelu_tanh,
+            eltwise_swish, eltwise_log, eltwise_clip, eltwise_gelu_erf);
+
     return ok ? status::success : status::unimplemented;
 }
 

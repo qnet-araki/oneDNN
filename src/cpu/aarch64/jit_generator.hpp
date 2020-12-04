@@ -155,8 +155,9 @@ public:
         ptrue(P_MSB_256.b, Xbyak_aarch64::VL32);
         not_(P_MSB_384.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_384.b);
         not_(P_MSB_256.b, P_ALL_ONE / Xbyak_aarch64::T_z, P_MSB_256.b);
-        pfalse(P_ALL_ZERO.b);
+        //        pfalse(P_ALL_ZERO.b);
 
+#if 0
         mov(x7, x0); /* First arg. */
         mov(x6, x1); /* Sedond arg. */
         mov(x2, x2);
@@ -164,6 +165,7 @@ public:
         mov(x8, x4);
         mov(x9, x5); /* 6-th arg. */
         mov(x4, sp); /* Intel64's stack register is 4-th register. */
+#endif
         sub_imm(x22, x4, 0x20000,
                 X_TMP_0); //X_TRANSLATOR_STACK:x22, xt_stack_offset:0x20000
     }
