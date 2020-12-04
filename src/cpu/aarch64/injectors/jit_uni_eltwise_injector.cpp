@@ -228,15 +228,18 @@ void jit_uni_eltwise_injector_f32<isa>::injector_postamble() {
 
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::assign_regs() {
-    vmm_mask = Vmm(preserved_vec_idxs[0]);
-    vmm_aux0 = Vmm(preserved_vec_idxs[0]);
-    vmm_aux1 = Vmm(preserved_vec_idxs[1]);
-    vmm_aux2 = Vmm(preserved_vec_idxs[2]);
-    vmm_aux3 = Vmm(preserved_vec_idxs[3]);
-    vmm_aux4 = Vmm(preserved_vec_idxs[4]);
-    vmm_aux5 = Vmm(preserved_vec_idxs[5]);
-    vmm_aux6 = Vmm(preserved_vec_idxs[6]);
-    vmm_aux7 = Vmm(preserved_vec_idxs[7]);
+    /* For translation of x64's memory operand instructions */
+    z_tmp = ZReg(static_cast<uint32_t>(preserved_vec_idxs[0]));
+
+    vmm_mask = Vmm(preserved_vec_idxs[1]);
+    vmm_aux0 = Vmm(preserved_vec_idxs[1]);
+    vmm_aux1 = Vmm(preserved_vec_idxs[2]);
+    vmm_aux2 = Vmm(preserved_vec_idxs[3]);
+    vmm_aux3 = Vmm(preserved_vec_idxs[4]);
+    vmm_aux4 = Vmm(preserved_vec_idxs[5]);
+    vmm_aux5 = Vmm(preserved_vec_idxs[6]);
+    vmm_aux6 = Vmm(preserved_vec_idxs[7]);
+    vmm_aux7 = Vmm(preserved_vec_idxs[8]);
 }
 
 template <cpu_isa_t isa>
@@ -516,7 +519,7 @@ void jit_uni_eltwise_injector_f32<isa>::exp_compute_vector_fwd(
             ZReg(IDX(table_val(half))).s);
 
     // tmp = floorf(fx)
-    //    h->uni_frint(ZRegS(IDX(vmm_aux2)), p_512, ZRegS(IDX(vmm_src)), _op_floor);
+    h->frintm(ZRegS(IDX(vmm_aux2)), p_512 / T_m, ZRegS(IDX(vmm_src)));
 
     // keep vmm_src = fx for further computations
     if (vlen != 32) {
@@ -1067,7 +1070,7 @@ void jit_uni_eltwise_injector_f32<isa>::soft_relu_compute_vector_fwd(
             ZReg(IDX(table_val(half))).s);
 
     // tmp = floorf(fx)
-    //    h->uni_frint(ZRegS(IDX(vmm_aux0)), p_512, ZRegS(IDX(vmm_src)), _op_floor);
+    h->frintm(ZRegS(IDX(vmm_aux0)), p_512 / T_m, ZRegS(IDX(vmm_src)));
 
     // keep vmm_src = fx for further computations
     if (vlen != 32) {
@@ -2446,7 +2449,7 @@ size_t jit_uni_eltwise_injector_f32<isa>::aux_gprs_count() {
 template <cpu_isa_t isa>
 void jit_uni_eltwise_injector_f32<isa>::round_compute_vector_fwd(
         const Vmm &vmm_src) {
-    //    h->uni_frint(ZRegS(IDX(vmm_src)), p_512, ZRegS(IDX(vmm_src)), _op_mxcsr);
+    h->frintn(ZRegS(IDX(vmm_src)), p_512 / T_m, ZRegS(IDX(vmm_src)));
 }
 
 template <cpu_isa_t isa>
