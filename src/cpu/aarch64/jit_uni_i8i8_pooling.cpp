@@ -416,18 +416,18 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::load_src_max_op(
     if (masked) {
         if (jpp.src_dt == s32) {
             //vmovups(vreg_src(jj) | mask(0), ptr[aux_reg_src_w + offset]);
-            add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
             ld1w(z_tmp0.s, mask(0) / T_z, ptr(x_tmp_addr));
             mov(ZRegS(IDX(vreg_src(jj))), PReg(0) / T_m, z_tmp0.s);
         } else {
             //vmovdqu8(vreg_src(jj) | mask(0), ptr[aux_reg_src_w + offset]);
-            add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
             ldr(z_tmp0, ptr(x_tmp_addr));
             mov(ZRegB(IDX(vreg_src(jj))), mask(0) / T_m, z_tmp0.b);
         }
     } else {
         //vmovups(vreg_src(jj), ptr[aux_reg_src_w + offset]);
-        add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+        add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
         ldr(ZReg(IDX(vreg_src(jj))), ptr(x_tmp_addr));
     }
 };
@@ -582,7 +582,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::load_src_avg_op(
     switch (jpp.src_dt) {
         case s32:
             //vmovups(vr_src, ptr[aux_reg_src_w + offset]);
-            add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
             if (masked) {
                 ld1w(z_tmp0.s, mask(ll) / T_z, ptr(x_tmp_addr));
                 mov(ZRegS(IDX(vr_src)), mask(ll) / T_m, z_tmp0.s);
@@ -592,32 +592,32 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::load_src_avg_op(
             break;
         case s8:
             //vpmovsxbd(vr_src, ptr[aux_reg_src_w + offset]);
-            add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
             if (masked) {
                 ldr(z_tmp0, ptr(x_tmp_addr));
                 zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                 zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                sxtb(ZReg(IDX(vr_src)).s, mask(ll) / T_m, z_tmp0.s);
+                sxtb(ZRegS(IDX(vr_src)), mask(ll) / T_m, z_tmp0.s);
             } else {
                 ldr(z_tmp0, ptr(x_tmp_addr));
                 zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                 zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                sxtb(ZReg(IDX(vr_src)).s, p_512 / T_m, z_tmp0.s);
+                sxtb(ZRegS(IDX(vr_src)), p_512 / T_m, z_tmp0.s);
             }
             break;
         case u8:
             //vpmovzxbd(vr_src, ptr[aux_reg_src_w + offset]);
-            add_imm(x_tmp_addr, XReg(IDX(aux_reg_src_w)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, aux_reg_src_w, offset, x_tmp_0);
             if (masked) {
                 ldr(z_tmp0, ptr(x_tmp_addr));
                 zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                 zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                uxtb(ZReg(IDX(vr_src)).s, mask(ll) / T_m, z_tmp0.s);
+                uxtb(ZRegS(IDX(vr_src)), mask(ll) / T_m, z_tmp0.s);
             } else {
                 ldr(z_tmp0, ptr(x_tmp_addr));
                 zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                 zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                uxtb(ZReg(IDX(vr_src)).s, p_512 / T_m, z_tmp0.s);
+                uxtb(ZRegS(IDX(vr_src)), p_512 / T_m, z_tmp0.s);
             }
             break;
         default: assert(!"unsupported src data type");
@@ -759,20 +759,20 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::store_dst_max_op(
         switch (jpp.src_dt) {
             case s32:
                 //vmovups(ptr[reg_ptr_dst_i8 + offset], vreg_dst(jj) | mask(0));
-                add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+                add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
                 st1w(ZRegS(IDX(vreg_dst(jj))), mask(0), ptr(x_tmp_addr));
                 break;
             case s8:
             case u8:
                 //vmovdqu8(ptr[reg_ptr_dst_i8 + offset], vreg_dst(jj) | mask(0));
-                add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+                add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
                 st1b(ZRegB(IDX(vreg_dst(jj))), mask(0), ptr(x_tmp_addr));
                 break;
             default: assert(!"unsupported src data type");
         }
     } else {
         //vmovups(ptr[reg_ptr_dst_i8 + offset], vreg_dst(jj));
-        add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+        add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
         str(ZReg(IDX(vreg_dst(jj))), ptr(x_tmp_addr));
     }
 }
@@ -936,7 +936,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::store_dst_avg_op(
     switch (jpp.dst_dt) {
         case s32:
             //vmovups(ptr[reg_ptr_dst_i8 + offset], vr_dst);
-            add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
             if (masked) {
                 st1w(ZRegS(IDX(vr_dst)), mask(ll), ptr(x_tmp_addr));
             } else {
@@ -945,7 +945,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::store_dst_avg_op(
             break;
         case s8:
             //vpmovsdb(ptr[reg_ptr_dst_i8 + offset], vr_dst);
-            add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
             if (masked) {
                 mov(z_tmp0.d, ZRegD(IDX(vr_dst)));
                 smin(z_tmp0.s, 127);
@@ -960,7 +960,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::store_dst_avg_op(
             break;
         case u8:
             //vpmovusdb(ptr[reg_ptr_dst_i8 + offset], vr_dst);
-            add_imm(x_tmp_addr, XReg(IDX(reg_ptr_dst_i8)), offset, x_tmp_0);
+            add_imm(x_tmp_addr, reg_ptr_dst_i8, offset, x_tmp_0);
             if (masked) {
                 mov(z_tmp0.d, ZRegD(IDX(vr_dst)));
                 umin(z_tmp0.s, 255);
@@ -1145,11 +1145,11 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::compute_max_op(const int jj) {
     // move max values into vreg_dst
     if (jpp.src_dt == s32) {
         //vpblendmd(vreg_dst(jj) | k_cmp_mask, vreg_dst(jj), vreg_src(jj));
-        sel(ZRegS(IDX(vreg_dst(jj))), PReg(IDX(k_cmp_mask)) / T_m,
+        sel(ZRegS(IDX(vreg_dst(jj))), k_cmp_mask / T_m,
                 ZRegS(IDX(vreg_src(jj))), ZRegS(IDX(vreg_dst(jj))));
     } else {
         //vpblendmb(vreg_dst(jj) | k_cmp_mask, vreg_dst(jj), vreg_src(jj));
-        sel(ZRegB(IDX(vreg_dst(jj))), PReg(IDX(k_cmp_mask)) / T_m,
+        sel(ZRegB(IDX(vreg_dst(jj))), k_cmp_mask / T_m,
                 ZRegB(IDX(vreg_src(jj))), ZRegB(IDX(vreg_dst(jj))));
     }
 }
@@ -1165,38 +1165,25 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_max_step(
 
     for (int jj = 0; jj < ur_c; jj++) {
         //uni_vmovups(vreg_dst(jj), vreg_tmp);
-        int vlen = cpu_isa_traits<isa>::vlen;
-        if (vlen == 64) { //vmovups(Zmm, Zmm)
             mov(ZRegD(IDX(vreg_dst(jj))), ZRegD(IDX(vreg_tmp)));
-        } else if (vlen == 32) { //vmovups(Ymm, Ymm)
-            mov(ZRegD(IDX(vreg_dst(jj))), ZRegD(IDX(vreg_tmp)));
-            mov(ZRegS(IDX(vreg_dst(jj))), P_MSB_256 / T_m, 0);
-        } else if (vlen == 16) { //movups(Xmm, Xmm)
-            mov(VReg16B(IDX(vreg_dst(jj))), VReg16B(IDX(vreg_tmp)));
-        } else {
-            assert(!"unreachable");
-        }
     }
 
     //mov(aux_reg_src_d, reg_ptr_src_i8);
-    mov(XReg(IDX(aux_reg_src_d)), XReg(IDX(reg_ptr_src_i8)));
+    mov(aux_reg_src_d, reg_ptr_src_i8);
     //xor_(reg_kd_index, reg_kd_index);
-    eor(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd_index)),
-            XReg(IDX(reg_kd_index)));
+    eor(reg_kd_index, reg_kd_index, reg_kd_index);
     L(l_kd);
     {
         //mov(aux_reg_src_h, aux_reg_src_d);
-        mov(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_d)));
+        mov(aux_reg_src_h, aux_reg_src_d);
         //xor_(reg_kh_index, reg_kh_index);
-        eor(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh_index)),
-                XReg(IDX(reg_kh_index)));
+        eor(reg_kh_index, reg_kh_index, reg_kh_index);
         L(l_kh);
         {
             //mov(aux_reg_src_w, aux_reg_src_h);
-            mov(XReg(IDX(aux_reg_src_w)), XReg(IDX(aux_reg_src_h)));
+            mov(aux_reg_src_w, aux_reg_src_h);
             //xor_(reg_kw_index, reg_kw_index);
-            eor(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw_index)),
-                    XReg(IDX(reg_kw_index)));
+            eor(reg_kw_index, reg_kw_index, reg_kw_index);
             L(l_kw);
             {
                 for (int jj = 0; jj < ur_c; jj++) {
@@ -1204,34 +1191,33 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_max_step(
                     compute_max_op(jj);
                 }
                 //add(aux_reg_src_w, c * sizeof_src_dt());
-                add(XReg(IDX(aux_reg_src_w)), XReg(IDX(aux_reg_src_w)),
-                        c * sizeof_src_dt());
+                add(aux_reg_src_w, aux_reg_src_w, c * sizeof_src_dt());
                 //inc(reg_kw_index);
-                adds(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw_index)), 1);
+                adds(reg_kw_index, reg_kw_index, 1);
                 //cmp(reg_kw_index, reg_kw);
-                cmp(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw)));
+                cmp(reg_kw_index, reg_kw);
                 //jl(l_kw, T_NEAR);
                 b(LT, l_kw);
             }
             //add(aux_reg_src_h, iw * c * sizeof_src_dt());
             //add(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_h)), iw * c * sizeof_src_dt());
-            add_imm(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_h)),
-                    iw * c * sizeof_src_dt(), x_tmp_0);
+            add_imm(aux_reg_src_h, aux_reg_src_h, iw * c * sizeof_src_dt(),
+                    x_tmp_0);
             //inc(reg_kh_index);
-            adds(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh_index)), 1);
+            adds(reg_kh_index, reg_kh_index, 1);
             //cmp(reg_kh_index, reg_kh);
-            cmp(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh)));
+            cmp(reg_kh_index, reg_kh);
             //jl(l_kh, T_NEAR);
             b(LT, l_kh);
         }
         //add(aux_reg_src_d, ih * iw * c * sizeof_src_dt());
         //add(XReg(IDX(aux_reg_src_d)), XReg(IDX(aux_reg_src_d)), ih * iw * c * sizeof_src_dt());
-        add_imm(XReg(IDX(aux_reg_src_d)), XReg(IDX(aux_reg_src_d)),
-                ih * iw * c * sizeof_src_dt(), x_tmp_0);
+        add_imm(aux_reg_src_d, aux_reg_src_d, ih * iw * c * sizeof_src_dt(),
+                x_tmp_0);
         //inc(reg_kd_index);
-        adds(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd_index)), 1);
+        adds(reg_kd_index, reg_kd_index, 1);
         //cmp(reg_kd_index, reg_kd);
-        cmp(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd)));
+        cmp(reg_kd_index, reg_kd);
         //jl(l_kd, T_NEAR);
         b(LT, l_kd);
     }
@@ -1263,46 +1249,29 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
                 uni_vpxor(vreg_dst_s32(jj, ll), vreg_dst_s32(jj, ll),
                         vreg_dst_s32(jj, ll));
 	      */
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
-                    eor(ZReg(IDX(vreg_dst_s32(jj, ll))).d,
-                            ZReg(IDX(vreg_dst_s32(jj, ll))).d,
-                            ZReg(IDX(vreg_dst_s32(jj, ll))).d);
-                } else if (vlen == 32) {
                     eor(ZRegD(IDX(vreg_dst_s32(jj, ll))),
                             ZRegD(IDX(vreg_dst_s32(jj, ll))),
                             ZRegD(IDX(vreg_dst_s32(jj, ll))));
-                    mov(ZRegS(IDX(vreg_dst_s32(jj, ll))), P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    eor(VReg16B(IDX(vreg_dst_s32(jj, ll))),
-                            VReg16B(IDX(vreg_dst_s32(jj, ll))),
-                            VReg16B(IDX(vreg_dst_s32(jj, ll))));
-                } else {
-                    assert(!"unreachable");
-                }
             }
         }
     }
 
     //mov(aux_reg_src_d, reg_ptr_src_i8);
-    mov(XReg(IDX(aux_reg_src_d)), XReg(IDX(reg_ptr_src_i8)));
+    mov(aux_reg_src_d, reg_ptr_src_i8);
     //xor_(reg_kd_index, reg_kd_index);
-    eor(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd_index)),
-            XReg(IDX(reg_kd_index)));
+    eor(reg_kd_index, reg_kd_index, reg_kd_index);
     L(l_kd);
     {
         //mov(aux_reg_src_h, aux_reg_src_d);
-        mov(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_d)));
+        mov(aux_reg_src_h, aux_reg_src_d);
         //xor_(reg_kh_index, reg_kh_index);
-        eor(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh_index)),
-                XReg(IDX(reg_kh_index)));
+        eor(reg_kh_index, reg_kh_index, reg_kh_index);
         L(l_kh);
         {
             //mov(aux_reg_src_w, aux_reg_src_h);
-            mov(XReg(IDX(aux_reg_src_w)), XReg(IDX(aux_reg_src_h)));
+            mov(aux_reg_src_w, aux_reg_src_h);
             //xor_(reg_kw_index, reg_kw_index);
-            eor(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw_index)),
-                    XReg(IDX(reg_kw_index)));
+            eor(reg_kw_index, reg_kw_index, reg_kw_index);
             L(l_kw);
             {
                 for (int jj = 0; jj < ur_c; jj++) {
@@ -1315,56 +1284,40 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
                             uni_vpaddd(vreg_dst_s32(jj, ll),
                                     vreg_dst_s32(jj, ll), vreg_src_s32(jj, ll));
 			    */
-                            int vlen = cpu_isa_traits<isa>::vlen;
-                            if (vlen == 64) {
-                                add(ZReg(IDX(vreg_dst_s32(jj, ll))).s,
-                                        ZReg(IDX(vreg_dst_s32(jj, ll))).s,
-                                        ZReg(IDX(vreg_src_s32(jj, ll))).s);
-                            } else if (vlen == 32) {
-                                add(ZReg(IDX(vreg_dst_s32(jj, ll))).s,
-                                        ZReg(IDX(vreg_dst_s32(jj, ll))).s,
-                                        ZReg(IDX(vreg_src_s32(jj, ll))).s);
-                            } else if (vlen == 16) {
-                                add(VReg(IDX(vreg_dst_s32(jj, ll))).s4,
-                                        VReg(IDX(vreg_dst_s32(jj, ll))).s4,
-                                        VReg(IDX(vreg_src_s32(jj, ll))).s4);
-                                mov(ZReg(IDX(vreg_dst_s32(jj, ll))).s,
-                                        P_MSB_256 / T_m, 0);
-                            } else {
-                                assert(!"unreachable");
-                            }
+                            add(ZRegS(IDX(vreg_dst_s32(jj, ll))),
+                                    ZRegS(IDX(vreg_dst_s32(jj, ll))),
+                                    ZRegS(IDX(vreg_src_s32(jj, ll))));
                         }
                     }
                 }
                 //add(aux_reg_src_w, c * sizeof_src_dt());
-                add(XReg(IDX(aux_reg_src_w)), XReg(IDX(aux_reg_src_w)),
-                        c * sizeof_src_dt());
+                add(aux_reg_src_w, aux_reg_src_w, c * sizeof_src_dt());
                 //inc(reg_kw_index);
-                adds(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw_index)), 1);
+                adds(reg_kw_index, reg_kw_index, 1);
                 //cmp(reg_kw_index, reg_kw);
-                cmp(XReg(IDX(reg_kw_index)), XReg(IDX(reg_kw)));
+                cmp(reg_kw_index, reg_kw);
                 //jl(l_kw, T_NEAR);
                 b(LT, l_kw);
             }
             //add(aux_reg_src_h, iw * c * sizeof_src_dt());
             //add(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_h)), iw * c * sizeof_src_dt());
-            add_imm(XReg(IDX(aux_reg_src_h)), XReg(IDX(aux_reg_src_h)),
-                    iw * c * sizeof_src_dt(), x_tmp_0);
+            add_imm(aux_reg_src_h, aux_reg_src_h, iw * c * sizeof_src_dt(),
+                    x_tmp_0);
             //inc(reg_kh_index);
-            adds(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh_index)), 1);
+            adds(reg_kh_index, reg_kh_index, 1);
             //cmp(reg_kh_index, reg_kh);
-            cmp(XReg(IDX(reg_kh_index)), XReg(IDX(reg_kh)));
+            cmp(reg_kh_index, reg_kh);
             //jl(l_kh, T_NEAR);
             b(LT, l_kh);
         }
         //add(aux_reg_src_d, ih * iw * c * sizeof_src_dt());
         //add(XReg(IDX(aux_reg_src_d)), XReg(IDX(aux_reg_src_d)), ih * iw * c * sizeof_src_dt());
-        add_imm(XReg(IDX(aux_reg_src_d)), XReg(IDX(aux_reg_src_d)),
-                ih * iw * c * sizeof_src_dt(), x_tmp_0);
+        add_imm(aux_reg_src_d, aux_reg_src_d, ih * iw * c * sizeof_src_dt(),
+                x_tmp_0);
         //inc(reg_kd_index);
-        adds(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd_index)), 1);
+        adds(reg_kd_index, reg_kd_index, 1);
         //cmp(reg_kd_index, reg_kd);
-        cmp(XReg(IDX(reg_kd_index)), XReg(IDX(reg_kd)));
+        cmp(reg_kd_index, reg_kd);
         //jl(l_kd, T_NEAR);
         b(LT, l_kd);
     }
@@ -1389,7 +1342,7 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
         mov_imm(x_tmp_0,
                 static_cast<int64_t>(
                         static_cast<int8_t>(ur_c * num_ll * vlen_size_elem)));
-        mul(XReg(IDX(reg_tmp_postops)), XReg(IDX(c_iter)), x_tmp_0);
+        mul(reg_tmp_postops, c_iter, x_tmp_0);
     }
 
     for (int jj = 0; jj < ur_c; jj++) {
@@ -1402,29 +1355,11 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
                 //uni_vcvtdq2ps(reg_dst_f32, reg_dst_s32);
                 //uni_vfmadd132ps(reg_dst_f32, vreg_zeros, vreg_tmp);
                 int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
-                    scvtf(ZReg(IDX(reg_dst_f32)).s, p_512 / T_m,
-                            ZReg(IDX(reg_dst_s32)).s);
+                scvtf(ZRegS(IDX(reg_dst_f32)), p_512 / T_m,
+                        ZRegS(IDX(reg_dst_s32)));
                     //fmad(ZRegS(IDX(reg_dst_f32)), p_512/T_m, ZRegS(IDX(vreg_zeros)), ZRegS(IDX(vreg_tmp)));
-                    fmad(ZRegS(IDX(reg_dst_f32)), p_512 / T_m,
-                            ZRegS(IDX(vreg_tmp)), ZRegS(IDX(vreg_zeros)));
-                } else if (vlen == 32) {
-                    scvtf(ZReg(IDX(reg_dst_f32)).s, p_512 / T_m,
-                            ZReg(IDX(reg_dst_s32)).s);
-                    //mov(ZReg(IDX(reg_dst_f32)).s, P_MSB_256/xa::T_m, 0);
-                    //fmad(ZRegS(IDX(reg_dst_f32)), p_512/T_m, ZRegS(IDX(vreg_zeros)), ZRegS(IDX(vreg_tmp)));
-                    fmad(ZRegS(IDX(reg_dst_f32)), p_512 / T_m,
-                            ZRegS(IDX(vreg_tmp)), ZRegS(IDX(vreg_zeros)));
-                    mov(ZReg(IDX(reg_dst_f32)).s, P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    scvtf(VReg(IDX(reg_dst_f32)).s4, VReg(IDX(reg_dst_s32)).s4);
-                    //fmad(ZRegS(IDX(reg_dst_f32)), p_512/T_m, ZRegS(IDX(vreg_zeros)), ZRegS(IDX(vreg_tmp)));
-                    fmad(ZRegS(IDX(reg_dst_f32)), p_512 / T_m,
-                            ZRegS(IDX(vreg_tmp)), ZRegS(IDX(vreg_zeros)));
-                    mov(ZReg(IDX(reg_dst_f32)).s, P_MSB_384 / T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
+                fmad(ZRegS(IDX(reg_dst_f32)), p_512 / T_m, ZRegS(IDX(vreg_tmp)),
+                        ZRegS(IDX(vreg_zeros)));
 
                 if (jpp.with_postops) {
                     binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
@@ -1449,67 +1384,22 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
                 }
 
                 //uni_vcvtps2dq(reg_dst_s32, reg_dst_f32);
-                if (vlen == 64) {
                     frinti(ZRegS(IDX(reg_dst_s32)), p_512 / T_m,
                             ZRegS(IDX(reg_dst_f32)));
                     fcvtzs(ZRegS(IDX(reg_dst_s32)), p_512 / T_m,
                             ZRegS(IDX(reg_dst_s32)));
-                } else if (vlen == 32) {
-                    frinti(ZRegS(IDX(reg_dst_s32)), p_512 / T_m,
-                            ZRegS(IDX(reg_dst_f32)));
-                    fcvtzs(ZRegS(IDX(reg_dst_s32)), p_512 / T_m,
-                            ZRegS(IDX(reg_dst_s32)));
-                    mov(ZReg(IDX(reg_dst_f32)).s, P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    frinti(VReg4S(IDX(reg_dst_s32)), VReg4S(IDX(reg_dst_f32)));
-                    fcvtzs(VReg4S(IDX(reg_dst_s32)), VReg4S(IDX(reg_dst_s32)));
-                    //mov(ZRegD(IDX(reg_dst_s32)), P_MSB_384/T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
 
                 if (jpp.with_postops)
                     if (jpp.dst_dt == u8) {
                         //uni_vpmaxsd(reg_dst_s32, reg_dst_s32, vreg_zeros);
-                        int vlen = cpu_isa_traits<isa>::vlen;
-                        if (vlen == 64) {
-                            cmple(p_tmp0.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            cmpgt(p_tmp1.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp0 / T_m,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp1 / T_m,
-                                    ZReg(IDX(reg_dst_s32)).s);
-                        } else if (vlen == 32) {
-                            cmple(p_tmp0.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            cmpgt(p_tmp1.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp0 / T_m,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp1 / T_m,
-                                    ZReg(IDX(reg_dst_s32)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, P_MSB_256 / T_m, 0);
-                        } else if (vlen == 16) {
-                            cmple(p_tmp0.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            cmpgt(p_tmp1.s, p_512 / T_z,
-                                    ZReg(IDX(reg_dst_s32)).s,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp0 / T_m,
-                                    ZReg(IDX(vreg_zeros)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, p_tmp1 / T_m,
-                                    ZReg(IDX(reg_dst_s32)).s);
-                            mov(ZReg(IDX(reg_dst_s32)).s, P_MSB_384 / T_m, 0);
-                        } else {
-                            assert(!"unreachable");
-                        }
+                        cmple(p_tmp0.s, p_512 / T_z, ZRegS(IDX(reg_dst_s32)),
+                                ZRegS(IDX(vreg_zeros)));
+                        cmpgt(p_tmp1.s, p_512 / T_z, ZRegS(IDX(reg_dst_s32)),
+                                ZRegS(IDX(vreg_zeros)));
+                        mov(ZRegS(IDX(reg_dst_s32)), p_tmp0 / T_m,
+                                ZRegS(IDX(vreg_zeros)));
+                        mov(ZRegS(IDX(reg_dst_s32)), p_tmp1 / T_m,
+                                ZRegS(IDX(reg_dst_s32)));
                     }
                 store_dst(jj, ll, c_tail);
             }
@@ -1539,22 +1429,22 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_c_block() {
     int c_tail = jpp.c_tail;
 
     //xor_(c_iter, c_iter);
-    eor(XReg(IDX(c_iter)), XReg(IDX(c_iter)), XReg(IDX(c_iter)));
+    eor(c_iter, c_iter, c_iter);
     if (c_steps > 0) {
         L(l_main_loop);
         {
             compute_step(ur_c, 0);
             //add(reg_ptr_src_i8, ur_c * c_block * sizeof_src_dt());
-            add(XReg(IDX(reg_ptr_src_i8)), XReg(IDX(reg_ptr_src_i8)),
+            add(reg_ptr_src_i8, reg_ptr_src_i8,
                     ur_c * c_block * sizeof_src_dt());
             //add(reg_ptr_dst_i8, ur_c * c_block * sizeof_dst_dt());
-            add(XReg(IDX(reg_ptr_dst_i8)), XReg(IDX(reg_ptr_dst_i8)),
+            add(reg_ptr_dst_i8, reg_ptr_dst_i8,
                     ur_c * c_block * sizeof_dst_dt());
             //inc(c_iter);
-            adds(XReg(IDX(c_iter)), XReg(IDX(c_iter)), 1);
+            adds(c_iter, c_iter, 1);
             //cmp(c_iter, c_steps);
             mov_imm(x_tmp_0, c_steps);
-            cmp(XReg(IDX(c_iter)), x_tmp_0);
+            cmp(c_iter, x_tmp_0);
             //jl(l_main_loop, T_NEAR);
             b(LT, l_main_loop);
         }
@@ -1728,12 +1618,12 @@ void jit_uni_i8i8_pooling_fwd_ker_t<sve_512>::init_mask() {
         w_tail_aarch64[3]
                 = (uint16_t)((tail_aarch64 >> 48) & 0x000000000000ffff);
 
-        movz(XReg(reg_mask.getIdx()), uint64_t(w_tail_aarch64[0]), 0);
-        movk(XReg(reg_mask.getIdx()), uint64_t(w_tail_aarch64[1]), 16);
-        movk(XReg(reg_mask.getIdx()), uint64_t(w_tail_aarch64[2]), 32);
-        movk(XReg(reg_mask.getIdx()), uint64_t(w_tail_aarch64[3]), 48);
+        movz(reg_mask, uint64_t(w_tail_aarch64[0]), 0);
+        movk(reg_mask, uint64_t(w_tail_aarch64[1]), 16);
+        movk(reg_mask, uint64_t(w_tail_aarch64[2]), 32);
+        movk(reg_mask, uint64_t(w_tail_aarch64[3]), 48);
         sub(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
-        str(XReg(reg_mask.getIdx()), ptr(X_TRANSLATOR_STACK));
+        str(reg_mask, ptr(X_TRANSLATOR_STACK));
         ldr(PReg(mask(ll).getIdx()), ptr(X_TRANSLATOR_STACK));
         add(X_TRANSLATOR_STACK, X_TRANSLATOR_STACK, 8);
     }
@@ -1743,47 +1633,33 @@ template <cpu_isa_t isa>
 void jit_uni_i8i8_pooling_fwd_ker_t<isa>::init_tmp_reg() {
     using namespace data_type;
 
-    int vlen = cpu_isa_traits<isa>::vlen;
     switch (jpp.alg) {
         case pooling_avg_include_padding:
         case pooling_avg_exclude_padding:
             //mov(reg_tmp, ptr[reg_param + offsetof(call_params_t, idivider)]);
-            add_imm(x_tmp_addr, XReg(IDX(reg_param)),
-                    offsetof(call_params_t, idivider), x_tmp_0);
-            ldr(XReg(IDX(reg_tmp)), ptr(x_tmp_addr));
+            add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, idivider),
+                    x_tmp_0);
+            ldr(reg_tmp, ptr(x_tmp_addr));
             //uni_vmovq(xmm_tmp, reg_tmp);
             bic(VReg(IDX(xmm_tmp)).b16, VReg(IDX(xmm_tmp)).b16,
                     VReg(IDX(xmm_tmp)).b16);
-            mov(VReg(IDX(xmm_tmp)).d[0], XReg(IDX(reg_tmp)));
+            mov(VReg(IDX(xmm_tmp)).d[0], reg_tmp);
             //uni_vpbroadcastd(vreg_tmp, xmm_tmp);
-            if (vlen == 64) {
                 dup(ZRegS(IDX(vreg_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            } else if (vlen == 32) {
-                dup(ZRegS(IDX(vreg_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vreg_tmp)), P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                dup(VReg4S(IDX(vreg_tmp)), VReg4S(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vreg_tmp)), P_MSB_384 / T_m, 0);
-            } else {
-                assert(!"unreachable");
-            }
             break;
         case pooling_max:
             switch (jpp.src_dt) {
                 case s32:
                     //mov(reg_tmp, nstl::numeric_limits<int32_t>::lowest());
-                    mov_imm(XReg(IDX(reg_tmp)),
-                            nstl::numeric_limits<int32_t>::lowest());
+                    mov_imm(reg_tmp, nstl::numeric_limits<int32_t>::lowest());
                     break;
                 case s8:
                     //mov(reg_tmp, nstl::numeric_limits<int8_t>::lowest());
-                    mov_imm(XReg(IDX(reg_tmp)),
-                            nstl::numeric_limits<int8_t>::lowest());
+                    mov_imm(reg_tmp, nstl::numeric_limits<int8_t>::lowest());
                     break;
                 case u8:
                     //mov(reg_tmp, nstl::numeric_limits<uint8_t>::lowest());
-                    mov(XReg(IDX(reg_tmp)),
-                            nstl::numeric_limits<uint8_t>::lowest());
+                    mov(reg_tmp, nstl::numeric_limits<uint8_t>::lowest());
                     break;
                 default: assert(!"unsupported src data_type");
             }
@@ -1791,35 +1667,15 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::init_tmp_reg() {
             //uni_vmovq(xmm_tmp, reg_tmp);
             bic(VReg(IDX(xmm_tmp)).b16, VReg(IDX(xmm_tmp)).b16,
                     VReg(IDX(xmm_tmp)).b16);
-            mov(VReg(IDX(xmm_tmp)).d[0], XReg(IDX(reg_tmp)));
+            mov(VReg(IDX(xmm_tmp)).d[0], reg_tmp);
             if (jpp.src_dt == s32) {
                 //uni_vpbroadcastd(vreg_tmp, xmm_tmp);
-                if (vlen == 64) {
                     dup(ZRegS(IDX(vreg_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                } else if (vlen == 32) {
-                    dup(ZRegS(IDX(vreg_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                    mov(ZRegS(IDX(vreg_tmp)), P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    dup(VReg4S(IDX(vreg_tmp)), VReg4S(IDX(xmm_tmp))[0]);
-                    mov(ZRegS(IDX(vreg_tmp)), P_MSB_384 / T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
 
                 //}else if (mayiuse(avx2)){
             } else if (mayiuse(sve_512)) {
                 //vpbroadcastb(vreg_tmp, xmm_tmp);
-                if (vlen == 64) {
                     dup(ZRegB(IDX(vreg_tmp)), ZRegB(IDX(xmm_tmp))[0]);
-                } else if (vlen == 32) {
-                    dup(ZRegB(IDX(vreg_tmp)), ZRegB(IDX(xmm_tmp))[0]);
-                    mov(ZRegS(IDX(vreg_tmp)), P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    dup(VReg16B(IDX(vreg_tmp)), VReg16B(IDX(xmm_tmp))[0]);
-                    mov(ZRegS(IDX(vreg_tmp)), P_MSB_384 / T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
 
             } else {
                 /*
@@ -1838,11 +1694,6 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::generate() {
     ptrue(p_512.b);
     ptrue(p_256.b, VL32);
     ptrue(p_128.b, VL16);
-    if (cpu_isa_traits<isa>::vlen == 32) {
-        p_lsb = p_256;
-    } else if (cpu_isa_traits<isa>::vlen == 16) {
-        p_lsb = p_128;
-    }
 
 #if !defined(_WIN32)
     // Always use rcx as abi_param1 -
@@ -1855,33 +1706,28 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::generate() {
     mov(reg, ptr[reg_param + offsetof(call_params_t, field)])
     */
     //READ_PARAM(reg_ptr_src_i8, src_i8);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), offsetof(call_params_t, src_i8),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_ptr_src_i8)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, src_i8), x_tmp_0);
+    ldr(reg_ptr_src_i8, ptr(x_tmp_addr));
     //READ_PARAM(reg_ptr_dst_i8, dst_i8);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), offsetof(call_params_t, dst_i8),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_ptr_dst_i8)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, dst_i8), x_tmp_0);
+    ldr(reg_ptr_dst_i8, ptr(x_tmp_addr));
     //READ_PARAM(reg_kd, kd_range);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), offsetof(call_params_t, kd_range),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_kd)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, kd_range), x_tmp_0);
+    ldr(reg_kd, ptr(x_tmp_addr));
     //READ_PARAM(reg_kh, kh_range);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), offsetof(call_params_t, kh_range),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_kh)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, kh_range), x_tmp_0);
+    ldr(reg_kh, ptr(x_tmp_addr));
     //READ_PARAM(reg_kw, kw_range);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), offsetof(call_params_t, kw_range),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_kw)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, kw_range), x_tmp_0);
+    ldr(reg_kw, ptr(x_tmp_addr));
     //READ_PARAM(reg_src_safe_access, src_safe_access);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)),
-            offsetof(call_params_t, src_safe_access), x_tmp_0);
-    ldr(XReg(IDX(reg_src_safe_access)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, src_safe_access),
+            x_tmp_0);
+    ldr(reg_src_safe_access, ptr(x_tmp_addr));
     //READ_PARAM(reg_dst_safe_access, dst_safe_access);
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)),
-            offsetof(call_params_t, dst_safe_access), x_tmp_0);
-    ldr(XReg(IDX(reg_dst_safe_access)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, offsetof(call_params_t, dst_safe_access),
+            x_tmp_0);
+    ldr(reg_dst_safe_access, ptr(x_tmp_addr));
     /*
 #undef READ_PARAM
     */

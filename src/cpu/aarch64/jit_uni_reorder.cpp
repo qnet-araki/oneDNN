@@ -250,7 +250,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
         const bool need_saturation
                 = (utils::one_of(prb_.otype, u8, s8, s32) && interim_f32);
 
-        add_imm(X_TMP_0, XReg(x_ptr_in_off), i_off * itype_sz, X_DEFAULT_ADDR);
+        add_imm(X_TMP_0, x_ptr_in_off, i_off * itype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_1, X_TMP_0, is(0) * itype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_2, X_TMP_1, is(0) * itype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_3, X_TMP_2, is(0) * itype_sz, X_DEFAULT_ADDR);
@@ -342,7 +342,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
         if (prb_.otype != f32)
             cvt2odt(0, unroll, prb_.otype, interim_f32 ? f32 : prb_.itype);
 
-        add_imm(X_TMP_0, XReg(x_ptr_out_off), o_off * otype_sz, X_DEFAULT_ADDR);
+        add_imm(X_TMP_0, x_ptr_out_off, o_off * otype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_1, X_TMP_0, os(1) * otype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_2, X_TMP_1, os(1) * otype_sz, X_DEFAULT_ADDR);
         add_imm(X_TMP_3, X_TMP_2, os(1) * otype_sz, X_DEFAULT_ADDR);
@@ -401,9 +401,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
     bool process_direct_copy(int len) {
         using namespace data_type;
 
-        const int simd_w = cpu_isa_traits<isa>::vlen == 16
-                ? cpu_isa_traits<isa>::vlen / itype_sz /* use 128-bit VReg */
-                : cpu_isa_traits<isa>::vlen / itype_sz
+        const int simd_w = cpu_isa_traits<isa>::vlen / itype_sz
                         / 2; /* use lower half of 512-bit ZReg */
 
         bool can_do = true && mayiuse(isa)
@@ -432,45 +430,22 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
                 } while (ur < unroll && count < x_tmp_vec_size);
 
                 for (int i = 0; i < count; i++) {
-                    /*                    if (vlen == 64)
-                        ldr(ZReg(tmp_ur + i), ptr(x_tmp_vec[i]));
-                        else */
-                    if (vlen == 64 || vlen == 32)
-                        ld1w(ZRegS(tmp_ur + i), p_lsb_256 / T_z,
-                                ptr(x_tmp_vec[i]));
-                    else if (vlen == 16)
-                        ldr(QReg(tmp_ur + i), ptr(x_tmp_vec[i]));
-                    else
-                        assert(!"unreachable");
+                    ld1w(ZRegS(tmp_ur + i), p_lsb_256 / T_z, ptr(x_tmp_vec[i]));
                 }
                 tmp_ur += count;
             }
 
             if (prb_.itype != prb_.otype) {
-                const int vlen = cpu_isa_traits<isa>::vlen;
                 for (int ur = 0; ur < unroll; ++ur) {
                     if (prb_.itype == s32 && prb_.otype == f32) {
-                        if (vlen == 64 || vlen == 32) {
                             ZRegS r(ur);
                             /* MSB side 256 bits are ignored. */
                             scvtf(r, p_512 / T_m, r);
-                        } else if (vlen == 16) {
-                            VReg4S r(ur);
-                            scvtf(r, r);
-                        } else
-                            assert(!"unreachable");
                     } else if (prb_.itype == f32 && prb_.otype == s32) {
                         /* Out of order can be expected. */
-                        if (vlen == 64 || vlen == 32) {
                             ZRegS r(ur);
                             frinti(r, p_512 / T_m, r);
                             fcvtzs(r, p_512 / T_m, r);
-                        } else if (vlen == 16) {
-                            VReg4S r(ur);
-                            frinti(r, r);
-                            fcvtzs(r, r);
-                        } else
-                            assert(!"unreachable");
                     } else
                         assert(!"unreachable");
                 }
@@ -480,7 +455,6 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
             tmp_ur = 0;
             while (ur < unroll) {
                 int count = 0;
-                const int vlen = cpu_isa_traits<isa>::vlen;
 
                 do {
                     add_imm(x_tmp_vec[count++], x_ptr_out_off,
@@ -489,13 +463,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
                 } while (ur < unroll && count < x_tmp_vec_size);
 
                 for (int i = 0; i < count; i++) {
-                    if (vlen == 64 || vlen == 32)
-                        st1w(ZRegS(tmp_ur + i), p_lsb_256 / T_z,
-                                ptr(x_tmp_vec[i]));
-                    else if (vlen == 16)
-                        str(QReg(tmp_ur + i), ptr(x_tmp_vec[i]));
-                    else
-                        assert(!"unreachable");
+                    st1w(ZRegS(tmp_ur + i), p_lsb_256 / T_z, ptr(x_tmp_vec[i]));
                 }
                 tmp_ur += count;
             }
@@ -978,11 +946,11 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
 
         eor(reg_off_in, reg_off_in, reg_off_in);
         eor(reg_off_out, reg_off_out, reg_off_out);
-        mov(x_ptr_in_off, XReg(reg_ptr_in.getIdx()));
-        mov(x_ptr_out_off, XReg(reg_ptr_out.getIdx()));
+        mov(x_ptr_in_off, reg_ptr_in);
+        mov(x_ptr_out_off, reg_ptr_out);
         if (prb_.scale_type == scale_type_t::MANY) {
             eor(reg_off_scale, reg_off_scale, reg_off_scale);
-            mov(x_ptr_scale_off, XReg(reg_ptr_scale.getIdx()));
+            mov(x_ptr_scale_off, reg_ptr_scale);
         }
 
         Label l_loop[3];
@@ -1164,9 +1132,9 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator {
         ldr(reg_ptr_out, ptr(X_TMP_1));
 #undef PARAM
 
-        mov(x_ptr_in_off, XReg(reg_ptr_in.getIdx()));
-        mov(x_ptr_out_off, XReg(reg_ptr_out.getIdx()));
-        mov(x_ptr_scale_off, XReg(reg_ptr_scale.getIdx()));
+        mov(x_ptr_in_off, reg_ptr_in);
+        mov(x_ptr_out_off, reg_ptr_out);
+        mov(x_ptr_scale_off, reg_ptr_scale);
         ptrue(p_lsb_256.b, VL32);
         ptrue(p_lsb_32.b, VL4);
         ptrue(p_512.b);

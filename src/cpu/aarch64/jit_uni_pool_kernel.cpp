@@ -341,15 +341,14 @@ inline void jit_uni_pool_kernel<isa>::prepare_tail_mask() {
         static const uint32_t mask[16] = {0xffffffff, 0xffffffff, 0xffffffff,
                 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff, 0,
                 0, 0, 0, 0, 0, 0, 0};
-        mov_imm(XReg(IDX(tmp_gpr)),
-                reinterpret_cast<size_t>(&mask[8 - jpp.c_tail]));
-        ld1w(ZRegS(IDX(vmm_c_tail_mask)), p_lsb / T_z, ptr(XReg(IDX(tmp_gpr))));
+        mov_imm(tmp_gpr, reinterpret_cast<size_t>(&mask[8 - jpp.c_tail]));
+        ld1w(ZRegS(IDX(vmm_c_tail_mask)), p_lsb / T_z, ptr(tmp_gpr));
     }
 }
 
 template <cpu_isa_t isa>
 inline void jit_uni_pool_kernel<isa>::put_one_in_vmm() {
-    mov_imm(XReg(IDX(tmp_gpr)), 1);
+    mov_imm(tmp_gpr, 1);
     uni_broadcast_reg_val(tmp_gpr.getIdx(), vmm_one.getIdx());
 }
 
@@ -361,19 +360,7 @@ inline void jit_uni_pool_kernel<isa>::uni_broadcast_reg_val(
     ptrue(p_tmp0.d, VL1);
     mov(ZRegD(vmm_idx), p_tmp0 / T_m, XReg(reg_idx));
 
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
-        //assert(!"unreachable");
         dup(ZRegS(vmm_idx), ZRegS(vmm_idx)[0]);
-    } else if (vlen == 32) {
-        dup(ZRegS(vmm_idx), ZRegS(vmm_idx)[0]);
-        mov(ZRegS(vmm_idx), P_MSB_256 / T_m, 0);
-    } else if (vlen == 16) {
-        dup(VReg4S(vmm_idx), VReg4S(vmm_idx)[0]);
-        mov(ZRegS(vmm_idx), P_MSB_384 / T_m, 0);
-    } else {
-        assert(!"unreachable");
-    }
 }
 
 template <cpu_isa_t isa>
@@ -384,20 +371,8 @@ inline void jit_uni_pool_kernel<isa>::push_vmm_val(const int idx) {
     XReg rsp = sp;
     sub_imm(XReg(idx), XReg(idx), val_to_store.getBit(), x_tmp_0);
 
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
         //str(ZReg(IDX(val_to_store)), ptr(XReg(IDX(rsp))));
         str(ZReg(IDX(val_to_store)), ptr(rsp));
-    } else if (vlen == 32) {
-        st1w(ZRegS(IDX(val_to_store)), p_lsb,
-                //ptr(XReg(IDX(rsp))));
-                ptr(rsp));
-    } else if (vlen == 16) {
-        //str(QReg(IDX(val_to_store)), ptr(XReg(IDX(rsp))));
-        str(QReg(IDX(val_to_store)), ptr(rsp));
-    } else {
-        assert(!"unreachable");
-    }
 }
 
 template <cpu_isa_t isa>
@@ -406,22 +381,8 @@ inline void jit_uni_pool_kernel<isa>::pop_vmm_val(const int idx) {
     Vmm val_to_load(idx);
     //VReg val_to_load(idx);
     XReg rsp = sp;
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) { //vmovups(Ymm, mem)
         //ldr(ZReg(IDX(val_to_load)), ptr(XReg(IDX(rsp))));
         ldr(ZReg(IDX(val_to_load)), ptr(rsp));
-    } else if (vlen == 32) { //vmovups(Ymm, mem)
-        ld1w(ZRegS(IDX(val_to_load)), p_lsb / T_z,
-                //ptr(XReg(IDX(rsp))));
-                ptr(rsp));
-        //ldr(ZReg(IDX(val_to_load)), ptr(rsp));
-    } else if (vlen == 16) { //movups(Xmm, mem)
-        //ldr(QReg(z_tmp0.getIdx()), ptr(XReg(IDX(rsp))));
-        ldr(QReg(z_tmp0.getIdx()), ptr(rsp));
-        mov(ZRegD(IDX(val_to_load)), p_lsb / T_m, z_tmp0.d);
-    } else {
-        assert(!"unreachable");
-    }
 
     //add_imm(XReg(IDX(rsp)), XReg(IDX(rsp)), val_to_load.getBit(),
     add_imm(XReg(5), XReg(5), val_to_load.getBit(), x_tmp_0);
@@ -569,8 +530,7 @@ inline void jit_uni_pool_kernel<isa>::load(const int idx, const xreg_t &reg_ptr,
             } else {
                 //get mem address
                 add_imm(x_tmp_addr, XReg(IDX(reg_ptr)), offset, x_tmp_0);
-                ld1w(ZRegS(idx), PReg(IDX(k_c_tail_mask)) / T_z,
-                        ptr(x_tmp_addr));
+                ld1w(ZRegS(idx), k_c_tail_mask / T_z, ptr(x_tmp_addr));
             }
         } else {
             //get mem address
@@ -648,7 +608,7 @@ inline void jit_uni_pool_kernel<isa>::store(const int idx,
             } else {
                 //get mem address
                 add_imm(x_tmp_addr, XReg(IDX(reg_ptr)), offset, x_tmp_0);
-                st1w(ZRegS(idx), PReg(IDX(k_c_tail_mask)), ptr(x_tmp_addr));
+                st1w(ZRegS(idx), k_c_tail_mask, ptr(x_tmp_addr));
             }
         } else {
             //get mem address
@@ -711,8 +671,7 @@ void jit_uni_pool_kernel<isa>::apply_postops(int ur_bc, int ur_w, int c_block,
             for (int bci = 0; bci < ur_bc; bci++) {
                 const auto vmm_idx
                         = vreg(reg_ind(0, bci, jj, ur_bc, ur_w)).getIdx();
-                add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(c_elem_off),
-                        x_tmp_0);
+                add_imm(x_tmp_addr, reg_param, GET_OFF(c_elem_off), x_tmp_0);
                 rhs_arg_params.vmm_idx_to_oc_elem_off_addr.emplace(
                         //vmm_idx, ptr[reg_param + GET_OFF(c_elem_off)]);
                         vmm_idx, ptr(x_tmp_addr));
@@ -738,25 +697,15 @@ inline void jit_uni_pool_kernel<isa>::maybe_recalculate_divisor(
         non_zero_kw -= nstl::max(0, pad_r - (ur_w - 1 - jj) * stride_w);
 
         if (non_zero_kw != prev_kw) {
-            mov_imm(XReg(IDX(tmp_gpr)), float2int((float)non_zero_kw));
+            mov_imm(tmp_gpr, float2int((float)non_zero_kw));
 
             ptrue(p_tmp0.d, VL2);
             mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
             ptrue(p_tmp0.d, VL1);
-            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(tmp_gpr)));
+            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, tmp_gpr);
 
-            const int vlen = cpu_isa_traits<isa>::vlen;
-            if (vlen == 64) {
                 dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            } else if (vlen == 32) {
-                dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                mov(ZReg(IDX(vmm_tmp)).s, P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                mov(ZReg(IDX(vmm_tmp)).s, P_MSB_384 / T_m, 0);
-            } else {
-                assert(!"unreachable");
-            }
+
             //if (with_c_tail_proccessing && (isa == avx || isa == avx2)) {
             if (with_c_tail_proccessing && (isa == sve_128 || isa == sve_256)) {
                 push_vmm_val(vmm_c_tail_mask.getIdx());
@@ -764,19 +713,9 @@ inline void jit_uni_pool_kernel<isa>::maybe_recalculate_divisor(
                         reg_ker_area_h.getIdx(), vmm_ker_area_h.getIdx());
             }
 
-            if (vlen == 64) {
-                fmul(ZReg(IDX(vmm_tmp)).s, ZReg(IDX(vmm_tmp)).s,
-                        ZReg(IDX(vmm_ker_area_h)).s);
-            } else if (vlen == 32) {
-                fmul(ZReg(IDX(vmm_tmp)).s, ZReg(IDX(vmm_tmp)).s,
-                        ZReg(IDX(vmm_ker_area_h)).s);
-                mov(ZReg(IDX(vmm_tmp)).s, P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                fmul(VReg(IDX(vmm_tmp)).s4, VReg(IDX(vmm_tmp)).s4,
-                        VReg(IDX(vmm_ker_area_h)).s4);
-            } else {
-                assert(!"unreachable");
-            }
+            fmul(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(vmm_tmp)),
+                    ZRegS(IDX(vmm_ker_area_h)));
+
             //if (with_c_tail_proccessing && (isa == avx || isa == avx2)) {
             if (with_c_tail_proccessing && (isa == sve_128 || isa == sve_256)) {
                 pop_vmm_val(vmm_c_tail_mask.getIdx());
@@ -823,52 +762,28 @@ inline void jit_uni_pool_kernel<isa>::avg_step(int ur_w, int ur_bc, int pad_l,
                 auto output_offset = dt_size * (jj * c_off + bci * c_block);
                 load(accvr.getIdx(), xreg_output, output_offset,
                         is_tail_processing(bci));
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
                     fdiv(ZRegS(IDX(accvr)), p_512, ZRegS(IDX(vmm_tmp)));
-                } else if (vlen == 32) {
-                    fdiv(ZRegS(IDX(accvr)), p_512, ZRegS(IDX(vmm_tmp)));
-                    mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    fdiv(VReg(IDX(accvr)).s4, VReg(IDX(accvr)).s4,
-                            VReg(IDX(vmm_tmp)).s4);
                 } else {
-                    assert(!"unreachable");
-                }
-            } else {
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
-                    eor(ZReg(IDX(accvr)).d, ZReg(IDX(accvr)).d,
-                            ZReg(IDX(accvr)).d);
-                } else if (vlen == 32) {
-                    eor(ZRegD(IDX(accvr)), ZRegD(IDX(accvr)),
-                            ZRegD(IDX(accvr)));
-                    mov(ZRegS(IDX(accvr)), P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    eor(VReg16B(IDX(accvr)), VReg16B(IDX(accvr)),
-                            VReg16B(IDX(accvr)));
-                } else {
-                    assert(!"unreachable");
-                }
+                eor(ZRegD(IDX(accvr)), ZRegD(IDX(accvr)), ZRegD(IDX(accvr)));
             }
         }
     }
 
     if (jpp.simple_alg && jpp.ndims == 5) {
-        str(XReg(IDX(reg_input)), pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_input, pre_ptr(X_TRANSLATOR_STACK, -8));
 
-        str(XReg(IDX(reg_output)), pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_output, pre_ptr(X_TRANSLATOR_STACK, -8));
 
-        mov(XReg(IDX(aux_reg_input_d)), XReg(IDX(reg_input)));
+        mov(aux_reg_input_d, reg_input);
 
         //get mem address
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kd_padding), x_tmp_0);
+        add_imm(x_tmp_addr, reg_param, GET_OFF(kd_padding), x_tmp_0);
         ldr(XReg(IDX(ki)), ptr(x_tmp_addr));
         L(kd_label);
 
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input_d)));
+        mov(aux_reg_input, aux_reg_input_d);
     } else {
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(reg_input)));
+        mov(aux_reg_input, reg_input);
     }
 
     eor(XReg(IDX(kj)), XReg(IDX(kj)), XReg(IDX(kj)));
@@ -894,20 +809,8 @@ inline void jit_uni_pool_kernel<isa>::avg_step(int ur_w, int ur_bc, int pad_l,
                     load(reg_idx(inpr_i), aux_xreg_input, input_offset,
                             is_tail_processing(bci));
 
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
-                        fadd(ZReg(IDX(inpvr)).s, ZReg(IDX(inpvr)).s,
-                                ZReg(IDX(accvr)).s);
-                    } else if (vlen == 32) {
-                        fadd(ZReg(IDX(inpvr)).s, ZReg(IDX(inpvr)).s,
-                                ZReg(IDX(accvr)).s);
-                        mov(ZReg(IDX(inpvr)).s, P_MSB_256 / T_m, 0);
-                    } else if (vlen == 16) {
-                        fadd(VReg(IDX(inpvr)).s4, VReg(IDX(inpvr)).s4,
-                                VReg(IDX(accvr)).s4);
-                    } else {
-                        assert(!"unreachable");
-                    }
+                    fadd(ZRegS(IDX(inpvr)), ZRegS(IDX(inpvr)),
+                            ZRegS(IDX(accvr)));
                     if (jpp.is_bf16) {
                         /*
                         if (!isa_has_bf16(jpp.isa))
@@ -927,59 +830,32 @@ inline void jit_uni_pool_kernel<isa>::avg_step(int ur_w, int ur_bc, int pad_l,
                         load(vmm_tmp_1.getIdx(), aux_xreg_input, input_offset,
                                 is_tail_processing(bci));
 
-                        int vlen = cpu_isa_traits<isa>::vlen;
-                        if (vlen == 64) {
-                            fadd(ZReg(IDX(accvr)).s, ZReg(IDX(accvr)).s,
-                                    ZReg(IDX(vmm_tmp_1)).s);
-                        } else if (vlen == 32) {
-                            fadd(ZReg(IDX(accvr)).s, ZReg(IDX(accvr)).s,
-                                    ZReg(IDX(vmm_tmp_1)).s);
-                            mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                        } else if (vlen == 16) {
-                            fadd(VReg(IDX(accvr)).s4, VReg(IDX(accvr)).s4,
-                                    VReg(IDX(vmm_tmp_1)).s4);
-                        } else {
-                            assert(!"unreachable");
-                        }
+                        fadd(ZRegS(IDX(accvr)), ZRegS(IDX(accvr)),
+                                ZRegS(IDX(vmm_tmp_1)));
                     } else {
                         //ptrue(p_tmp0.b, VL1);
                         //ptrue(p_tmp0.b, VL2);
-                        int vlen = cpu_isa_traits<isa>::vlen;
                         //get mem address
-                        add_imm(x_tmp_addr, XReg(IDX(aux_reg_input)),
-                                input_offset, x_tmp_0);
-                        if (vlen == 64) {
+                        add_imm(x_tmp_addr, aux_reg_input, input_offset,
+                                x_tmp_0);
                             ldr(z_tmp0, ptr(x_tmp_addr));
-                            fadd(ZReg(IDX(accvr)).s, ZReg(IDX(accvr)).s,
-                                    z_tmp0.s);
-                        } else if (vlen == 32) {
-                            ldr(z_tmp0, ptr(x_tmp_addr));
-                            fadd(ZReg(IDX(accvr)).s, ZReg(IDX(accvr)).s,
-                                    z_tmp0.s);
-                            mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                        } else if (vlen == 16) {
-                            ld1(VReg(z_tmp0.getIdx()).s4, ptr(x_tmp_addr));
-                            fadd(VReg(IDX(accvr)).s4, VReg(IDX(accvr)).s4,
-                                    VReg(z_tmp0.getIdx()).s4);
-                        } else {
-                            assert(!"unreachable");
+                        fadd(ZRegS(IDX(accvr)), ZRegS(IDX(accvr)), z_tmp0.s);
                         }
                     }
                 }
             }
-        }
-        add_imm(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input)),
-                (jpp.dt_size * iw * c_off), x_tmp_0);
+        add_imm(aux_reg_input, aux_reg_input, (jpp.dt_size * iw * c_off),
+                x_tmp_0);
 
         adds(XReg(IDX(kj)), XReg(IDX(kj)), 1);
 
-        cmp(XReg(IDX(kj)), XReg(IDX(reg_kh)));
+        cmp(XReg(IDX(kj)), reg_kh);
 
         b(LT, kh_label);
     }
 
     if (jpp.simple_alg && jpp.ndims == 5) {
-        add_imm(XReg(IDX(aux_reg_input_d)), XReg(IDX(aux_reg_input_d)),
+        add_imm(aux_reg_input_d, aux_reg_input_d,
                 (jpp.dt_size * jpp.ih * iw * c_off), x_tmp_0);
 
         subs(XReg(IDX(ki)), XReg(IDX(ki)), 1);
@@ -989,9 +865,9 @@ inline void jit_uni_pool_kernel<isa>::avg_step(int ur_w, int ur_bc, int pad_l,
 
         b(GT, kd_label);
 
-        ldr(XReg(IDX(reg_output)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_output, post_ptr(X_TRANSLATOR_STACK, 8));
 
-        ldr(XReg(IDX(reg_input)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_input, post_ptr(X_TRANSLATOR_STACK, 8));
     }
 
     if (!jpp.is_backward) {
@@ -1001,18 +877,7 @@ inline void jit_uni_pool_kernel<isa>::avg_step(int ur_w, int ur_bc, int pad_l,
             for (int bci = 0; bci < ur_bc; bci++) {
                 const auto accr_i = reg_ind(0, bci, jj, ur_bc, ur_w);
                 const auto accvr = vreg(accr_i);
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
                     fdiv(ZRegS(IDX(accvr)), p_512, ZRegS(IDX(vmm_tmp)));
-                } else if (vlen == 32) {
-                    fdiv(ZRegS(IDX(accvr)), p_512, ZRegS(IDX(vmm_tmp)));
-                    mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                } else if (vlen == 16) {
-                    fdiv(VReg(IDX(accvr)).s4, VReg(IDX(accvr)).s4,
-                            VReg(IDX(vmm_tmp)).s4);
-                } else {
-                    assert(!"unreachable");
-                }
             }
         }
 
@@ -1067,55 +932,22 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
             return with_c_tail_proccessing && bc == (ur_bc - 1);
     };
 
-    mov_imm(XReg(IDX(tmp_gpr)),
-            float2int(nstl::numeric_limits<float>::lowest()));
+    mov_imm(tmp_gpr, float2int(nstl::numeric_limits<float>::lowest()));
 
     ptrue(p_tmp0.d, VL2);
     mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
     ptrue(p_tmp0.d, VL1);
-    mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(tmp_gpr)));
+    mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, tmp_gpr);
 
-    const int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
         dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-    } else if (vlen == 32) {
-        dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-        mov(ZReg(IDX(vmm_tmp)).s, P_MSB_256 / T_m, 0);
-    } else if (vlen == 16) {
-        dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-        mov(ZReg(IDX(vmm_tmp)).s, P_MSB_384 / T_m, 0);
-    } else {
-        assert(!"unreachable");
-    }
 
     for_(int jj = 0; jj < ur_w; jj++)
     for (int bci = 0; bci < ur_bc; bci++) {
         const auto accvr = vreg(reg_ind(0, bci, jj, ur_bc, ur_w));
-        int vlen = cpu_isa_traits<isa>::vlen;
-        if (vlen == 64) { //vmovups(Zmm, Zmm)
             mov(ZRegD(IDX(accvr)), ZRegD(IDX(vmm_tmp)));
-        } else if (vlen == 32) { //vmovups(Ymm, Ymm)
-            mov(ZRegD(IDX(accvr)), ZRegD(IDX(vmm_tmp)));
-            mov(ZRegS(IDX(accvr)), P_MSB_256 / T_m, 0);
-        } else if (vlen == 16) { //movups(Xmm, Xmm)
-            mov(VReg16B(IDX(accvr)), VReg16B(IDX(vmm_tmp)));
-        } else {
-            assert(!"unreachable");
-        }
         if (jpp.is_training) {
             const auto indvr = vreg(reg_ind(2, bci, jj, ur_bc, ur_w));
-            int vlen = cpu_isa_traits<isa>::vlen;
-            if (vlen == 64) {
-                eor(ZReg(IDX(indvr)).d, ZReg(IDX(indvr)).d, ZReg(IDX(indvr)).d);
-            } else if (vlen == 32) {
                 eor(ZRegD(IDX(indvr)), ZRegD(IDX(indvr)), ZRegD(IDX(indvr)));
-                mov(ZRegS(IDX(indvr)), P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                eor(VReg16B(IDX(indvr)), VReg16B(IDX(indvr)),
-                        VReg16B(IDX(indvr)));
-            } else {
-                assert(!"unreachable");
-            }
         }
     }
     if (jpp.is_training) {
@@ -1123,38 +955,27 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
         ptrue(p_tmp0.d, VL2);
         mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
         ptrue(p_tmp0.d, VL1);
-        mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(reg_k_shift)));
+        mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, reg_k_shift);
 
-        int vlen = cpu_isa_traits<isa>::vlen;
-        if (vlen == 64) {
             dup(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(xmm_tmp))[0]);
-        } else if (vlen == 32) {
-            dup(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(xmm_tmp))[0]);
-            mov(ZRegS(IDX(vmm_k_offset)), P_MSB_256 / T_m, 0);
-        } else if (vlen == 16) {
-            dup(VReg4S(IDX(vmm_k_offset)), VReg4S(IDX(xmm_tmp))[0]);
-            mov(ZRegS(IDX(vmm_k_offset)), P_MSB_384 / T_m, 0);
-        } else {
-            assert(!"unreachable");
-        }
     }
     if (jpp.ndims == 5) {
 
-        str(XReg(IDX(reg_input)), pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_input, pre_ptr(X_TRANSLATOR_STACK, -8));
 
-        str(XReg(IDX(reg_output)), pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_output, pre_ptr(X_TRANSLATOR_STACK, -8));
 
-        mov(XReg(IDX(aux_reg_input_d)), XReg(IDX(reg_input)));
+        mov(aux_reg_input_d, reg_input);
 
         //get mem address
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kd_padding), x_tmp_0);
+        add_imm(x_tmp_addr, reg_param, GET_OFF(kd_padding), x_tmp_0);
         ldr(XReg(IDX(ki)), ptr(x_tmp_addr));
         L(kd_label);
 
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input_d)));
+        mov(aux_reg_input, aux_reg_input_d);
     } else {
 
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(reg_input)));
+        mov(aux_reg_input, reg_input);
     }
 
     eor(XReg(IDX(kj)), XReg(IDX(kj)), XReg(IDX(kj)));
@@ -1226,10 +1047,10 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                                     ZRegS(cmpSrcIdx),
                                     ZRegS(cmpSrc2Idx));
                             break; //NLE_US
-                        case 3: //UNORD_Q
-                        case 7: //ORD_Q
-                        default: assert(!"unreachable"); break;
-                    }
+                            case 3: //UNORD_Q
+                            case 7: //ORD_Q
+                            default: assert(!"unreachable"); break;
+                        }
                     cpy(z_tmp0.s, p_tmp0 / T_z, 255);
                     not_(p_tmp0.b, P_ALL_ONE / T_z, P_MSB_384.b);
                     mov(ZRegS(IDX(vmm_mask)), p_tmp0 / T_m,
@@ -1245,13 +1066,11 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                         mov(ZReg(IDX(indvr)).s, p_tmp1 / T_m,
                                 ZReg(IDX(vmm_k_offset)).s);
                     }
-		  */
+          */
                     //} else if (isa == avx || isa == avx2) {
                 } else if (isa == sve_128 || isa == sve_256) {
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
-                        uint cmpDstIdx = IDX(cvtvr);
-                        uint cmpMaskIdx = p_512.getIdx();
+                    uint cmpDstIdx = IDX(cvtvr);
+                    uint cmpMaskIdx = p_512.getIdx();
                         uint cmpSrcIdx = IDX(accvr);
                         uint cmpSrc2Idx = IDX(inpvr);
                         switch (int(_cmp_lt_os)) {
@@ -1361,336 +1180,16 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             case 31: //TRUE_US
                             default: assert(!"unreachable"); break;
                         }
-                        lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                        cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
-                        mov(ZReg(IDX(accvr)).s, p10 / T_m, ZReg(IDX(inpvr)).s);
-                        not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                        mov(ZReg(IDX(accvr)).s, p_tmp0 / T_m,
-                                ZReg(IDX(accvr)).s);
-                        mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                        if (jpp.is_training) {
-                            if (vlen == 64) {
-                                assert(!"unreachable");
-                            } else if (vlen == 32) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_256 / T_m, 0);
-                            } else if (vlen == 16) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_128 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_384 / T_m, 0);
-                            } else {
-                                assert(!"unreachable");
-                            }
-                        }
-                    } else if (vlen == 32) {
-                        mov(p_tmp0.b, P_ALL_ONE / T_z, P_MSB_256.b);
-                        uint cmpDstIdx = IDX(cvtvr);
-                        uint cmpMaskIdx = p_tmp0.getIdx();
-                        uint cmpSrcIdx = IDX(accvr);
-                        uint cmpSrc2Idx = IDX(inpvr);
-                        switch (int(_cmp_lt_os)) {
-                            case 0:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OQ
-                            case 1:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OS
-                            case 2:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OS
-                            case 4:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_UQ
-                            case 5:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_US
-                            case 6:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_US
-                            case 8:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_UQ
-                            case 9:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_US
-                            case 10:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_US
-                            case 12:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OQ
-                            case 13:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OS
-                            case 14:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OS
-                            case 16:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OS
-                            case 17:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OQ
-                            case 18:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OQ
-                            case 20:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_US
-                            case 21:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_UQ
-                            case 22:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_UQ
-                            case 24:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_US
-                            case 25:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_UQ
-                            case 26:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_UQ
-                            case 28:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OS
-                            case 29:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OQ
-                            case 30:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OQ
-                            case 3: //UNORD_Q
-                            case 7: //ORD_Q
-                            case 11: //FALSE_OQ
-                            case 15: //TRUE_UQ
-                            case 19: //UNORD_S
-                            case 23: //ORD_S
-                            case 27: //FALSE_OS
-                            case 31: //TRUE_US
-                            default: assert(!"unreachable"); break;
-                        }
-                        lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                        cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
-                        mov(ZReg(IDX(accvr)).s, p10 / T_m, ZReg(IDX(inpvr)).s);
-                        not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                        mov(ZReg(IDX(accvr)).s, p_tmp0 / T_m,
-                                ZReg(IDX(accvr)).s);
-                        mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                        if (jpp.is_training) {
-                            if (vlen == 64) {
-                                assert(!"unreachable");
-                            } else if (vlen == 32) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_256 / T_m, 0);
-                            } else if (vlen == 16) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_128 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_384 / T_m, 0);
-                            } else {
-                                assert(!"unreachable");
-                            }
-                        }
-                    } else if (vlen == 16) {
-                        mov(p_tmp0.b, P_ALL_ONE / T_z, P_MSB_256.b);
-                        uint cmpDstIdx = IDX(cvtvr);
-                        uint cmpMaskIdx = p_tmp0.getIdx();
-                        uint cmpSrcIdx = IDX(accvr);
-                        uint cmpSrc2Idx = IDX(inpvr);
-                        switch (int(_cmp_lt_os)) {
-                            case 0:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OQ
-                            case 1:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OS
-                            case 2:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OS
-                            case 4:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_UQ
-                            case 5:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_US
-                            case 6:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_US
-                            case 8:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_UQ
-                            case 9:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_US
-                            case 10:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_US
-                            case 12:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OQ
-                            case 13:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OS
-                            case 14:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OS
-                            case 16:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OS
-                            case 17:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OQ
-                            case 18:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OQ
-                            case 20:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_US
-                            case 21:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_UQ
-                            case 22:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_UQ
-                            case 24:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_US
-                            case 25:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_UQ
-                            case 26:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_UQ
-                            case 28:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OS
-                            case 29:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OQ
-                            case 30:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OQ
-                            case 3: //UNORD_Q
-                            case 7: //ORD_Q
-                            case 11: //FALSE_OQ
-                            case 15: //TRUE_UQ
-                            case 19: //UNORD_S
-                            case 23: //ORD_S
-                            case 27: //FALSE_OS
-                            case 31: //TRUE_US
-                            default: assert(!"unreachable"); break;
-                        }
-                        lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                        cmpgt(p10.s, p_128 / T_z, z_tmp0.s, 0);
-                        mov(ZReg(IDX(accvr)).s, p10 / T_m, ZReg(IDX(inpvr)).s);
-                        not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                        mov(ZReg(IDX(accvr)).s, p_tmp0 / T_m,
-                                ZReg(IDX(accvr)).s);
-                        mov(ZReg(IDX(accvr)).s, P_MSB_384 / T_m, 0);
-                        if (jpp.is_training) {
-                            if (vlen == 64) {
-                                assert(!"unreachable");
-                            } else if (vlen == 32) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_256 / T_m, 0);
-                            } else if (vlen == 16) {
-                                lsr(z_tmp0.s, ZReg(IDX(cvtvr)).s, 31);
-                                cmpgt(p10.s, p_128 / T_z, z_tmp0.s, 0);
-                                mov(ZReg(IDX(indvr)).s, p10 / T_m,
-                                        ZReg(IDX(vmm_k_offset)).s);
-                                not_(p_tmp0.b, P_ALL_ONE, p10.b);
-                                mov(ZReg(IDX(indvr)).s, p_tmp0 / T_m,
-                                        ZReg(IDX(indvr)).s);
-                                mov(ZReg(IDX(indvr)).s, P_MSB_384 / T_m, 0);
-                            } else {
-                                assert(!"unreachable");
-                            }
-                        }
-                    } else {
-                        assert(!"unreachable");
-                    }
+                    lsr(z_tmp0.s, ZRegS(IDX(cvtvr)), 31);
+                    cmpgt(p10.s, p_256 / T_z, z_tmp0.s, 0);
+                    mov(ZRegS(IDX(accvr)), p10 / T_m, ZRegS(IDX(inpvr)));
+                    not_(p_tmp0.b, P_ALL_ONE, p10.b);
+                    mov(ZRegS(IDX(accvr)), p_tmp0 / T_m, ZRegS(IDX(accvr)));
+                    mov(ZRegS(IDX(accvr)), P_MSB_256 / T_m, 0);
+                    if (jpp.is_training) { assert(!"unreachable"); }
                 } else {
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
                         uint cmpDstIdx = IDX(k_store_mask);
-                        uint cmpMaskIdx = p_512.getIdx();
+                    uint cmpMaskIdx = p_512.getIdx();
                         uint cmpSrcIdx = IDX(accvr);
                         uint cmpSrc2Idx = IDX(inpvr);
                         switch (int(_cmp_lt_os)) {
@@ -1800,270 +1299,12 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             case 31: //TRUE_US
                             default: assert(!"unreachable"); break;
                         }
-                    } else if (vlen == 32) {
-                        mov(p_tmp0.b, P_ALL_ONE / T_z, P_MSB_256.b);
-                        uint cmpDstIdx = IDX(k_store_mask);
-                        uint cmpMaskIdx = p_tmp0.getIdx();
-                        uint cmpSrcIdx = IDX(accvr);
-                        uint cmpSrc2Idx = IDX(inpvr);
-                        switch (int(_cmp_lt_os)) {
-                            case 0:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OQ
-                            case 1:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OS
-                            case 2:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OS
-                            case 4:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_UQ
-                            case 5:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_US
-                            case 6:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_US
-                            case 8:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_UQ
-                            case 9:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_US
-                            case 10:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_US
-                            case 12:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OQ
-                            case 13:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OS
-                            case 14:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OS
-                            case 16:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OS
-                            case 17:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OQ
-                            case 18:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OQ
-                            case 20:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_US
-                            case 21:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_UQ
-                            case 22:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_UQ
-                            case 24:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_US
-                            case 25:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_UQ
-                            case 26:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_UQ
-                            case 28:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OS
-                            case 29:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OQ
-                            case 30:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OQ
-                            case 3: //UNORD_Q
-                            case 7: //ORD_Q
-                            case 11: //FALSE_OQ
-                            case 15: //TRUE_UQ
-                            case 19: //UNORD_S
-                            case 23: //ORD_S
-                            case 27: //FALSE_OS
-                            case 31: //TRUE_US
-                            default: assert(!"unreachable"); break;
-                        }
-                    } else if (vlen == 16) {
-                        mov(p_tmp0.b, P_ALL_ONE / T_z, P_MSB_384.b);
-                        uint cmpDstIdx = IDX(k_store_mask);
-                        uint cmpMaskIdx = p_tmp0.getIdx();
-                        uint cmpSrcIdx = IDX(accvr);
-                        uint cmpSrc2Idx = IDX(inpvr);
-                        switch (int(_cmp_lt_os)) {
-                            case 0:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OQ
-                            case 1:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OS
-                            case 2:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OS
-                            case 4:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_UQ
-                            case 5:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_US
-                            case 6:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_US
-                            case 8:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_UQ
-                            case 9:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_US
-                            case 10:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_US
-                            case 12:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OQ
-                            case 13:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OS
-                            case 14:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OS
-                            case 16:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_OS
-                            case 17:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LT_OQ
-                            case 18:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //LE_OQ
-                            case 20:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_US
-                            case 21:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLT_UQ
-                            case 22:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NLE_UQ
-                            case 24:
-                                fcmeq(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //EQ_US
-                            case 25:
-                                fcmlt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGE_UQ
-                            case 26:
-                                fcmle(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NGT_UQ
-                            case 28:
-                                fcmne(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //NEQ_OS
-                            case 29:
-                                fcmge(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GE_OQ
-                            case 30:
-                                fcmgt(PRegS(cmpDstIdx), PReg(cmpMaskIdx) / T_z,
-                                        ZRegS(cmpSrcIdx), ZRegS(cmpSrc2Idx));
-                                break; //GT_OQ
-                            case 3: //UNORD_Q
-                            case 7: //ORD_Q
-                            case 11: //FALSE_OQ
-                            case 15: //TRUE_UQ
-                            case 19: //UNORD_S
-                            case 23: //ORD_S
-                            case 27: //FALSE_OS
-                            case 31: //TRUE_US
-                            default: assert(!"unreachable"); break;
-                        }
-                    } else {
-                        assert(!"unreachable");
                     }
-                    if (vlen == 64) {
-                        sel(ZRegS(IDX(accvr)), PReg(IDX(k_store_mask)) / T_m,
-                                ZRegS(IDX(inpvr)), ZRegS(IDX(accvr)));
-                    } else if (vlen == 32) {
-                        sel(ZRegS(IDX(accvr)), PReg(IDX(k_store_mask)) / T_m,
-                                ZRegS(IDX(inpvr)), ZRegS(IDX(accvr)));
-                        mov(ZReg(IDX(accvr)).s, P_MSB_256 / T_m, 0);
-                    } else if (vlen == 16) {
-                        sel(ZRegS(IDX(accvr)), PReg(IDX(k_store_mask)) / T_m,
-                                ZRegS(IDX(inpvr)), ZRegS(IDX(accvr)));
-                        mov(ZReg(IDX(accvr)).s, P_MSB_384 / T_m, 0);
-                    } else {
-                        assert(!"unreachable");
-                    }
+                sel(ZRegS(IDX(accvr)), k_store_mask / T_m, ZRegS(IDX(inpvr)),
+                        ZRegS(IDX(accvr)));
                     if (jpp.is_training) {
-                        if (vlen == 64) {
-                            sel(ZRegS(IDX(indvr)),
-                                    PReg(IDX(k_store_mask)) / T_m,
-                                    ZRegS(IDX(vmm_k_offset)),
-                                    ZRegS(IDX(indvr)));
-                        } else if (vlen == 32) {
-                            sel(ZRegS(IDX(indvr)),
-                                    PReg(IDX(k_store_mask)) / T_m,
-                                    ZRegS(IDX(vmm_k_offset)),
-                                    ZRegS(IDX(indvr)));
-                            mov(ZReg(IDX(indvr)).s, P_MSB_256 / T_m, 0);
-                        } else if (vlen == 16) {
-                            sel(ZRegS(IDX(indvr)),
-                                    PReg(IDX(k_store_mask)) / T_m,
-                                    ZRegS(IDX(vmm_k_offset)),
-                                    ZRegS(IDX(indvr)));
-                            mov(ZReg(IDX(indvr)).s, P_MSB_384 / T_m, 0);
-                        } else {
-                            assert(!"unreachable");
-                        }
+                    sel(ZRegS(IDX(indvr)), k_store_mask / T_m,
+                            ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(indvr)));
                     }
                 }
             }
@@ -2080,67 +1321,39 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                     avx_vpadd1(vmm_k_offset, vmm_one, xmm_tmp);
 		  */
                 } else {
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
-                        add(ZReg(IDX(vmm_k_offset)).s,
-                                ZReg(IDX(vmm_k_offset)).s,
-                                ZReg(IDX(vmm_one)).s);
-                    } else if (vlen == 32) {
-                        add(ZReg(IDX(vmm_k_offset)).s,
-                                ZReg(IDX(vmm_k_offset)).s,
-                                ZReg(IDX(vmm_one)).s);
-                    } else if (vlen == 16) {
-                        add(VReg(IDX(vmm_k_offset)).s4,
-                                VReg(IDX(vmm_k_offset)).s4,
-                                VReg(IDX(vmm_one)).s4);
-                        mov(ZReg(IDX(vmm_k_offset)).s, P_MSB_256 / T_m, 0);
-                    } else {
-                        assert(!"unreachable");
-                    }
+                add(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(vmm_k_offset)),
+                        ZRegS(IDX(vmm_one)));
                 }
 
                 //if (with_c_tail_proccessing && isa == avx)
                 if (with_c_tail_proccessing && isa == sve_128)
                     pop_vmm_val(vmm_c_tail_mask.getIdx());
             }
-        }
 
-        add_imm(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input)),
-                (jpp.dt_size * iw * c_off), x_tmp_0);
+        add_imm(aux_reg_input, aux_reg_input, (jpp.dt_size * iw * c_off),
+                x_tmp_0);
 
         adds(XReg(IDX(kj)), XReg(IDX(kj)), 1);
 
-        cmp(XReg(IDX(kj)), XReg(IDX(reg_kh)));
+        cmp(XReg(IDX(kj)), reg_kh);
 
         b(LT, kh_label);
     }
 
     if (jpp.ndims == 5) {
-        add_imm(XReg(IDX(aux_reg_input_d)), XReg(IDX(aux_reg_input_d)),
+        add_imm(aux_reg_input_d, aux_reg_input_d,
                 (jpp.dt_size * jpp.ih * iw * c_off), x_tmp_0);
         if (jpp.is_training) {
             //get mem address
-            add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kd_padding_shift),
-                    x_tmp_0);
-            ldr(XReg(IDX(tmp_gpr)), ptr(x_tmp_addr));
+            add_imm(x_tmp_addr, reg_param, GET_OFF(kd_padding_shift), x_tmp_0);
+            ldr(tmp_gpr, ptr(x_tmp_addr));
 
             ptrue(p_tmp0.d, VL2);
             mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
             ptrue(p_tmp0.d, VL1);
-            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(tmp_gpr)));
+            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, tmp_gpr);
 
-            int vlen = cpu_isa_traits<isa>::vlen;
-            if (vlen == 64) {
                 dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            } else if (vlen == 32) {
-                dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vmm_tmp)), P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                dup(VReg4S(IDX(vmm_tmp)), VReg4S(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vmm_tmp)), P_MSB_384 / T_m, 0);
-            } else {
-                assert(!"unreachable");
-            }
             //if (isa == avx && !mayiuse(avx2)) {
             if (isa == sve_128 && !mayiuse(sve_256)) {
                 /*
@@ -2149,20 +1362,8 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                 avx_vpadd1(vmm_k_offset, xmm_tmp, t);
 	      */
             } else {
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
-                    add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                            ZReg(IDX(vmm_tmp)).s);
-                } else if (vlen == 32) {
-                    add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                            ZReg(IDX(vmm_tmp)).s);
-                } else if (vlen == 16) {
-                    add(VReg(IDX(vmm_k_offset)).s4, VReg(IDX(vmm_k_offset)).s4,
-                            VReg(IDX(vmm_tmp)).s4);
-                    mov(ZReg(IDX(vmm_k_offset)).s, P_MSB_384 / T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
+                add(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(vmm_k_offset)),
+                        ZRegS(IDX(vmm_tmp)));
             }
         }
 
@@ -2173,14 +1374,14 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
 
         b(GT, kd_label);
 
-        ldr(XReg(IDX(reg_output)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_output, post_ptr(X_TRANSLATOR_STACK, 8));
 
-        ldr(XReg(IDX(reg_input)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_input, post_ptr(X_TRANSLATOR_STACK, 8));
     }
 
     //if (with_c_tail_proccessing && jpp.is_c_padded && isa == sse41) {
     if (with_c_tail_proccessing && jpp.is_c_padded && isa == asimd) {
-        mov_imm(XReg(IDX(tmp_gpr)), 0);
+        mov_imm(tmp_gpr, 0);
     }
 
     if (jpp.with_postops) {
@@ -2292,20 +1493,7 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             fmov(SReg(IDX(xmm_tmp)), WReg(IDX(reg_shuf_mask)));
 
                             int vlen = cpu_isa_traits<isa>::vlen;
-                            if (vlen == 64) {
-                                dup(ZRegS(IDX(vmm_tmp)),
-                                        ZRegS(IDX(xmm_tmp))[0]);
-                            } else if (vlen == 32) {
-                                dup(ZRegS(IDX(vmm_tmp)),
-                                        ZRegS(IDX(xmm_tmp))[0]);
-                                mov(ZRegS(IDX(vmm_tmp)), P_MSB_256 / T_m, 0);
-                            } else if (vlen == 16) {
-                                dup(VReg4S(IDX(vmm_tmp)),
-                                        VReg4S(IDX(xmm_tmp))[0]);
-                                mov(ZRegS(IDX(vmm_tmp)), P_MSB_384 / T_m, 0);
-                            } else {
-                                assert(!"unreachable");
-                            }
+                            dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
                         }
                         //if (mayiuse(avx2)) {
                         if (mayiuse(sve_256)) {
@@ -2335,8 +1523,7 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             orr(p_tmp0.b, p_512, p_tmp1.b, P_MSB_256.b);
                             mov(ZRegB(IDX(yr)), p_tmp0 / T_m, 0);
 
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
-                                    step_index, x_tmp_0);
+                            add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                             str(SReg(IDX(xr)), ptr(x_tmp_addr));
 
                             ptrue(p_tmp0.d, VL2);
@@ -2345,7 +1532,7 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             sel(ZRegD(IDX(yr)), p_tmp0, z_tmp0.d, z_tmp1.d);
                             mov(ZRegD(IDX(yr)), P_MSB_256 / T_m, 0);
 
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
+                            add_imm(x_tmp_addr, reg_index,
                                     step_index + (jpp.c_block / 2), x_tmp_0);
                             str(SReg(IDX(xr)), ptr(x_tmp_addr));
                         } else {
@@ -2383,17 +1570,15 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             orr(p_tmp0.b, p_512, p_tmp1.b, P_MSB_256.b);
                             mov(ZRegB(IDX(t)), p_tmp0 / T_m, 0);
 
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
-                                    step_index, x_tmp_0);
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
-                                    step_index, x_tmp_0);
+                            add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
+                            add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                             str(SReg(IDX(t)), ptr(x_tmp_addr));
 
                             mov(z_tmp0.d, ZRegD(IDX(yr)));
                             ext(z_tmp0.b, ZRegB(IDX(yr)), 16);
                             mov(VReg(IDX(t)).b16, VReg(IDX(z_tmp0)).b16);
 
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
+                            add_imm(x_tmp_addr, reg_index,
                                     step_index + (jpp.c_block / 2), x_tmp_0);
                             str(SReg(IDX(t)), ptr(x_tmp_addr));
                         }
@@ -2411,56 +1596,25 @@ inline void jit_uni_pool_kernel<isa>::max_step_fwd(int ur_w, int ur_bc,
                             vpmovusdb(ptr[reg_index + step_index], vr);
 			  */
                             /* get mem address */
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
-                                    step_index, x_tmp_0);
-                            int vlen = cpu_isa_traits<isa>::vlen;
-                            if (vlen == 64) {
+                            add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                                 //mov(p_tmp0.b, P_ALL_ONE.b);
                                 mov(z_tmp0.d, ZRegD(IDX(vr)));
                                 umin(z_tmp0.s, 255);
                                 st1b(z_tmp0.s, p_512, ptr(x_tmp_addr));
-                            } else if (vlen == 32) {
-                                assert(!"unreachable");
-                            } else if (vlen == 16) {
-                                assert(!"unreachable");
-                            } else {
-                                assert(!"unreachable");
-                            }
                         } else {
                             //get mem address
-                            add_imm(x_tmp_addr, XReg(IDX(reg_index)),
-                                    step_index, x_tmp_0);
-                            int vlen = cpu_isa_traits<isa>::vlen;
-                            if (vlen == 64) {
+                            add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                                 mov(z_tmp0.d, ZRegD(IDX(vr)));
                                 umin(z_tmp0.s, 255);
-                                st1b(z_tmp0.s, PReg(IDX(k_c_tail_mask)),
-                                        ptr(x_tmp_addr));
-                            } else if (vlen == 32) {
-                                assert(!"unreachable");
-                            } else if (vlen == 16) {
-                                assert(!"unreachable");
-                            } else {
-                                assert(!"unreachable");
-                            }
+                            st1b(z_tmp0.s, k_c_tail_mask, ptr(x_tmp_addr));
                         }
                     } else {
                         /* get mem address */
-                        add_imm(x_tmp_addr, XReg(IDX(reg_index)), step_index,
-                                x_tmp_0);
-                        int vlen = cpu_isa_traits<isa>::vlen;
-                        if (vlen == 64) {
+                        add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                             //mov(p_tmp0.b, P_ALL_ONE.b);
                             mov(z_tmp0.d, ZRegD(IDX(vr)));
                             umin(z_tmp0.s, 255);
                             st1b(z_tmp0.s, p_512, ptr(x_tmp_addr));
-                        } else if (vlen == 32) {
-                            assert(!"unreachable");
-                        } else if (vlen == 16) {
-                            assert(!"unreachable");
-                        } else {
-                            assert(!"unreachable");
-                        }
                     }
                 }
             } else {
@@ -2533,8 +1687,7 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                     /* TO DO
                     vmovq(indxr, ptr[reg_index + step_index]);
 		  */
-                    add_imm(x_tmp_addr, XReg(IDX(reg_index)), step_index,
-                            x_tmp_0);
+                    add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                     ldr(DReg(IDX(indxr)), ptr(x_tmp_addr));
                 }
                 //if (!mayiuse(avx2)) {
@@ -2546,24 +1699,9 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                     /* TO DO
                     vpmovzxbd(indvr, indxr);
 		  */
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
                         zip1(z_tmp0.b, ZRegB(IDX(indxr)), ZRegB(IDX(indxr)));
                         zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
                         uxtb(ZRegS(IDX(indvr)), p_512 / T_m, z_tmp0.s);
-                    } else if (vlen == 32) {
-                        zip1(z_tmp0.b, ZRegB(IDX(indxr)), ZRegB(IDX(indxr)));
-                        zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                        uxtb(ZRegS(IDX(indvr)), p_512 / T_m, z_tmp0.s);
-                        mov(ZRegS(IDX(indvr)), P_MSB_256 / T_m, 0);
-                    } else if (vlen == 16) {
-                        zip1(z_tmp0.b, ZRegB(IDX(indxr)), ZRegB(IDX(indxr)));
-                        zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                        uxtb(ZRegS(IDX(indvr)), p_512 / T_m, z_tmp0.s);
-                        mov(ZRegS(IDX(indvr)), P_MSB_384 / T_m, 0);
-                    } else {
-                        assert(!"unreachable");
-                    }
                 }
             } else {
                 if (is_tail_processing(bci) && !jpp.is_c_padded) {
@@ -2574,39 +1712,19 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                     uzp1(p_tmp0.b, PRegB(IDX(k_c_tail_mask)), p_tmp1.b);
                     // 16-bit context -> 8-bit conext
                     uzp1(p_tmp0.b, p_tmp0.b, p_tmp1.b);
-                    add_imm(X_DEFAULT_ADDR, XReg(IDX(reg_index)), step_index,
-                            X_TMP_0);
+                    add_imm(X_DEFAULT_ADDR, reg_index, step_index, X_TMP_0);
                     ld1b(z_indvr.b, p_tmp0 / T_z, ptr(X_DEFAULT_ADDR));
                     zip1(z_indvr.b, z_indvr.b, z_tmp0.b);
                     zip1(z_indvr.h, z_indvr.h, z_tmp0.h);
-                    uxtb(ZRegS(IDX(indvr)), PReg(IDX(k_c_tail_mask)) / T_m,
-                            z_indvr.s);
+                    uxtb(ZRegS(IDX(indvr)), k_c_tail_mask / T_m, z_indvr.s);
 
                 } else {
                     /* get mem address */
-                    add_imm(x_tmp_addr, XReg(IDX(reg_index)), step_index,
-                            x_tmp_0);
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
+                    add_imm(x_tmp_addr, reg_index, step_index, x_tmp_0);
                         ldr(QReg(IDX(z_tmp0)), ptr(x_tmp_addr));
                         zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                         zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                        uxtb(ZReg(IDX(indvr)).s, p_512 / T_m, z_tmp0.s);
-                    } else if (vlen == 32) {
-                        ldr(QReg(IDX(z_tmp0)), ptr(x_tmp_addr));
-                        zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
-                        zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                        uxtb(ZReg(IDX(indvr)).s, p_512 / T_m, z_tmp0.s);
-                        mov(ZReg(IDX(indvr)).s, P_MSB_256 / T_m, 0);
-                    } else if (vlen == 16) {
-                        ldr(QReg(IDX(z_tmp0)), ptr(x_tmp_addr));
-                        zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
-                        zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
-                        uxtb(ZReg(IDX(indvr)).s, p_512 / T_m, z_tmp0.s);
-                        mov(ZReg(IDX(indvr)).s, P_MSB_384 / T_m, 0);
-                    } else {
-                        assert(!"unreachable");
-                    }
+                    uxtb(ZRegS(IDX(indvr)), p_512 / T_m, z_tmp0.s);
                 }
             }
         } else {
@@ -2617,23 +1735,12 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
     ptrue(p_tmp0.d, VL2);
     mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
     ptrue(p_tmp0.d, VL1);
-    mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(reg_k_shift)));
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
+    mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, reg_k_shift);
         dup(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(xmm_tmp))[0]);
-    } else if (vlen == 32) {
-        dup(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(xmm_tmp))[0]);
-        mov(ZRegS(IDX(vmm_k_offset)), P_MSB_256 / T_m, 0);
-    } else if (vlen == 16) {
-        dup(VReg4S(IDX(vmm_k_offset)), VReg4S(IDX(xmm_tmp))[0]);
-        mov(ZRegS(IDX(vmm_k_offset)), P_MSB_384 / T_m, 0);
-    } else {
-        assert(!"unreachable");
-    }
 
     if (jpp.simple_alg && jpp.ndims == 5) {
-        str(XReg(IDX(reg_input)), pre_ptr(X_TRANSLATOR_STACK, -8));
-        str(XReg(IDX(reg_output)), pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_input, pre_ptr(X_TRANSLATOR_STACK, -8));
+        str(reg_output, pre_ptr(X_TRANSLATOR_STACK, -8));
         //if (isa == sse41) {
         if (isa == asimd) {
             /*
@@ -2643,22 +1750,21 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                     pre_ptr(X_TRANSLATOR_STACK, -8));
 	  */
         }
-        mov(XReg(IDX(aux_reg_input_d)), XReg(IDX(reg_input)));
+        mov(aux_reg_input_d, reg_input);
 
         //get mem address
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kd_padding), x_tmp_0);
+        add_imm(x_tmp_addr, reg_param, GET_OFF(kd_padding), x_tmp_0);
         ldr(XReg(IDX(ki)), ptr(x_tmp_addr));
 
         //get mem address
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kd_padding_shift),
-                x_tmp_0);
-        ldr(XReg(IDX(reg_kd_pad_shift)), ptr(x_tmp_addr));
+        add_imm(x_tmp_addr, reg_param, GET_OFF(kd_padding_shift), x_tmp_0);
+        ldr(reg_kd_pad_shift, ptr(x_tmp_addr));
         L(kd_label);
 
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input_d)));
+        mov(aux_reg_input, aux_reg_input_d);
     } else {
 
-        mov(XReg(IDX(aux_reg_input)), XReg(IDX(reg_input)));
+        mov(aux_reg_input, reg_input);
     }
 
     eor(XReg(IDX(kj)), XReg(IDX(kj)), XReg(IDX(kj)));
@@ -2765,26 +1871,10 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                             ZRegS(IDX(indvr)), ZRegS(IDX(vmm_k_offset)));
 
                     not_(p_tmp0.b, P_ALL_ONE.b, PRegB(IDX(k_store_mask)));
-                    int vlen = cpu_isa_traits<isa>::vlen;
-                    if (vlen == 64) {
                         mov(ZRegD(IDX(vmm_tmp)), ZRegD(IDX(outvr)));
-                        mov(ZReg(IDX(vmm_tmp)).s, p_tmp0 / T_m, 0);
-                        fadd(ZReg(IDX(inpvr)).s, ZReg(IDX(inpvr)).s,
-                                ZReg(IDX(vmm_tmp)).s);
-                    } else if (vlen == 32) {
-                        mov(ZRegD(IDX(vmm_tmp)), ZRegD(IDX(outvr)));
-                        mov(ZReg(IDX(vmm_tmp)).s, p_tmp0 / T_m, 0);
-                        fadd(ZReg(IDX(inpvr)).s, ZReg(IDX(inpvr)).s,
-                                ZReg(IDX(vmm_tmp)).s);
-                        mov(ZReg(IDX(inpvr)).s, P_MSB_256 / T_m, 0);
-                    } else if (vlen == 16) {
-                        mov(VReg16B(IDX(vmm_tmp)), VReg16B(IDX(outvr)));
-                        mov(ZReg(IDX(vmm_tmp)).s, p_tmp0 / T_m, 0);
-                        fadd(VReg(IDX(inpvr)).s4, VReg(IDX(inpvr)).s4,
-                                VReg(IDX(vmm_tmp)).s4);
-                    } else {
-                        assert(!"unreachable");
-                    }
+                    mov(ZRegS(IDX(vmm_tmp)), p_tmp0 / T_m, 0);
+                    fadd(ZRegS(IDX(inpvr)), ZRegS(IDX(inpvr)),
+                            ZRegS(IDX(vmm_tmp)));
 
                     if (jpp.is_bf16) {
                         /*
@@ -2811,58 +1901,35 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
                 avx_vpadd1(vmm_k_offset, vmm_one, xmm_tmp);
 	      */
             } else {
-                int vlen = cpu_isa_traits<isa>::vlen;
-                if (vlen == 64) {
-                    add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                            ZReg(IDX(vmm_one)).s);
-                } else if (vlen == 32) {
-                    add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                            ZReg(IDX(vmm_one)).s);
-                } else if (vlen == 16) {
-                    add(VReg(IDX(vmm_k_offset)).s4, VReg(IDX(vmm_k_offset)).s4,
-                            VReg(IDX(vmm_one)).s4);
-                    mov(ZReg(IDX(vmm_k_offset)).s, P_MSB_384 / T_m, 0);
-                } else {
-                    assert(!"unreachable");
-                }
+                add(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(vmm_k_offset)),
+                        ZRegS(IDX(vmm_one)));
             }
 
             //if (with_c_tail_proccessing && (isa == avx || isa == avx2))
             if (with_c_tail_proccessing && (isa == sve_128 || isa == sve_256))
                 pop_vmm_val(vmm_c_tail_mask.getIdx());
         }
-        add_imm(XReg(IDX(aux_reg_input)), XReg(IDX(aux_reg_input)),
-                (jpp.dt_size * iw * c_off), x_tmp_0);
+        add_imm(aux_reg_input, aux_reg_input, (jpp.dt_size * iw * c_off),
+                x_tmp_0);
 
         adds(XReg(IDX(kj)), XReg(IDX(kj)), 1);
 
-        cmp(XReg(IDX(kj)), XReg(IDX(reg_kh)));
+        cmp(XReg(IDX(kj)), reg_kh);
 
         b(LT, kh_label);
     }
     if (jpp.simple_alg && jpp.ndims == 5) {
-        add_imm(XReg(IDX(aux_reg_input_d)), XReg(IDX(aux_reg_input_d)),
+        add_imm(aux_reg_input_d, aux_reg_input_d,
                 (jpp.dt_size * jpp.ih * iw * c_off), x_tmp_0);
 
-        mov(XReg(IDX(tmp_gpr)), XReg(IDX(reg_kd_pad_shift)));
+        mov(tmp_gpr, reg_kd_pad_shift);
 
         ptrue(p_tmp0.d, VL2);
         mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
         ptrue(p_tmp0.d, VL1);
-        mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(tmp_gpr)));
+        mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, tmp_gpr);
 
-        const int vlen = cpu_isa_traits<isa>::vlen;
-        if (vlen == 64) {
             dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-        } else if (vlen == 32) {
-            dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            mov(ZReg(IDX(vmm_tmp)).s, P_MSB_256 / T_m, 0);
-        } else if (vlen == 16) {
-            dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            mov(ZReg(IDX(vmm_tmp)).s, P_MSB_384 / T_m, 0);
-        } else {
-            assert(!"unreachable");
-        }
         //if (isa == avx && !mayiuse(avx2)) {
         if (isa == sve_128 && !mayiuse(sve_256)) {
             /*
@@ -2870,20 +1937,8 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
             avx_vpadd1(vmm_k_offset, vmm_tmp, t);
 	  */
         } else {
-            int vlen = cpu_isa_traits<isa>::vlen;
-            if (vlen == 64) {
-                add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                        ZReg(IDX(vmm_tmp)).s);
-            } else if (vlen == 32) {
-                add(ZReg(IDX(vmm_k_offset)).s, ZReg(IDX(vmm_k_offset)).s,
-                        ZReg(IDX(vmm_tmp)).s);
-            } else if (vlen == 16) {
-                add(VReg(IDX(vmm_k_offset)).s4, VReg(IDX(vmm_k_offset)).s4,
-                        VReg(IDX(vmm_tmp)).s4);
-                mov(ZReg(IDX(vmm_k_offset)).s, P_MSB_384 / T_m, 0);
-            } else {
-                assert(!"unreachable");
-            }
+            add(ZRegS(IDX(vmm_k_offset)), ZRegS(IDX(vmm_k_offset)),
+                    ZRegS(IDX(vmm_tmp)));
         }
 
         subs(XReg(IDX(ki)), XReg(IDX(ki)), 1);
@@ -2900,9 +1955,9 @@ inline void jit_uni_pool_kernel<isa>::max_step_bwd(int ur_w, int ur_bc,
             pop(dst_ptr);
 	  */
         }
-        ldr(XReg(IDX(reg_output)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_output, post_ptr(X_TRANSLATOR_STACK, 8));
 
-        ldr(XReg(IDX(reg_input)), post_ptr(X_TRANSLATOR_STACK, 8));
+        ldr(reg_input, post_ptr(X_TRANSLATOR_STACK, 8));
     }
 }
 
@@ -2920,50 +1975,32 @@ void jit_uni_pool_kernel<isa>::zero_diff_src(
     };
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(zero_id), x_tmp_0);
-    ldr(XReg(IDX(reg_zero_id)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(zero_id), x_tmp_0);
+    ldr(reg_zero_id, ptr(x_tmp_addr));
 
     mov_imm(x_tmp_0, 0);
-    cmp(XReg(IDX(reg_zero_id)), x_tmp_0);
+    cmp(reg_zero_id, x_tmp_0);
 
     b(EQ, l_skip);
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(zero_ih), x_tmp_0);
-    ldr(XReg(IDX(reg_zero_ih)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(zero_ih), x_tmp_0);
+    ldr(reg_zero_ih, ptr(x_tmp_addr));
 
     mov_imm(x_tmp_0, 0);
-    cmp(XReg(IDX(reg_zero_ih)), x_tmp_0);
+    cmp(reg_zero_ih, x_tmp_0);
 
     b(EQ, l_skip);
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(zero_ptr), x_tmp_0);
-    ldr(XReg(IDX(reg_zero_ptr)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(zero_ptr), x_tmp_0);
+    ldr(reg_zero_ptr, ptr(x_tmp_addr));
 
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
         using Vmm = typename Xbyak_aarch64::ZReg;
-    } else if (vlen == 32) {
-        using Vmm = typename Xbyak_aarch64::ZReg;
-    } else if (vlen == 16) {
-        using Vmm = typename Xbyak_aarch64::VReg;
-    } else {
-        assert(!"unreachable");
-    }
     Vmm vzero = vmm_tmp;
     //VReg vzero = vmm_tmp
 
-    if (vlen == 64) {
-        eor(ZReg(IDX(vzero)).d, ZReg(IDX(vzero)).d, ZReg(IDX(vzero)).d);
-    } else if (vlen == 32) {
         eor(ZRegD(IDX(vzero)), ZRegD(IDX(vzero)), ZRegD(IDX(vzero)));
-        mov(ZRegS(IDX(vzero)), P_MSB_256 / T_m, 0);
-    } else if (vlen == 16) {
-        eor(VReg16B(IDX(vzero)), VReg16B(IDX(vzero)), VReg16B(IDX(vzero)));
-    } else {
-        assert(!"unreachable");
-    }
 
     const int width_size = jpp.iw * c_off * jpp.dt_size;
 
@@ -2971,9 +2008,9 @@ void jit_uni_pool_kernel<isa>::zero_diff_src(
 
     L(l_id_loop);
     {
-        mov(XReg(IDX(aux_reg_zero_ptr)), XReg(IDX(reg_zero_ptr)));
+        mov(aux_reg_zero_ptr, reg_zero_ptr);
 
-        mov(XReg(IDX(aux_reg_zero_ih)), XReg(IDX(reg_zero_ih)));
+        mov(aux_reg_zero_ih, reg_zero_ih);
         L(l_ih_loop);
         {
             /*
@@ -3008,19 +2045,17 @@ void jit_uni_pool_kernel<isa>::zero_diff_src(
                             is_tail_processing(bci));
                 }
             }
-            add_imm(XReg(IDX(reg_zero_ptr)), XReg(IDX(reg_zero_ptr)),
-                    width_size, x_tmp_0);
+            add_imm(reg_zero_ptr, reg_zero_ptr, width_size, x_tmp_0);
 
-            subs(XReg(IDX(aux_reg_zero_ih)), XReg(IDX(aux_reg_zero_ih)), 1);
+            subs(aux_reg_zero_ih, aux_reg_zero_ih, 1);
 
             b(NE, l_ih_loop);
         }
-        mov(XReg(IDX(reg_zero_ptr)), XReg(IDX(aux_reg_zero_ptr)));
+        mov(reg_zero_ptr, aux_reg_zero_ptr);
 
-        add_imm(XReg(IDX(reg_zero_ptr)), XReg(IDX(reg_zero_ptr)),
-                (width_size * jpp.ih), x_tmp_0);
+        add_imm(reg_zero_ptr, reg_zero_ptr, (width_size * jpp.ih), x_tmp_0);
 
-        subs(XReg(IDX(reg_zero_id)), XReg(IDX(reg_zero_id)), 1);
+        subs(reg_zero_id, reg_zero_id, 1);
 
         b(NE, l_id_loop);
     }
@@ -3057,43 +2092,37 @@ void jit_uni_pool_kernel<isa>::generate() {
     ptrue(p_512.b);
     ptrue(p_256.b, VL32);
     ptrue(p_128.b, VL16);
-    if (cpu_isa_traits<isa>::vlen == 32) {
-        p_lsb = p_256;
-    } else if (cpu_isa_traits<isa>::vlen == 16) {
-        p_lsb = p_128;
-    }
 
     if (!isa_has_bf16(jpp.isa) && jpp.is_bf16) bf16_emu_->init_vcvtneps2bf16();
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(src), x_tmp_0);
-    ldr(XReg(IDX(reg_input)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(src), x_tmp_0);
+    ldr(reg_input, ptr(x_tmp_addr));
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(dst), x_tmp_0);
-    ldr(XReg(IDX(reg_output)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(dst), x_tmp_0);
+    ldr(reg_output, ptr(x_tmp_addr));
     if (jpp.alg == pooling_max && (jpp.is_training || jpp.is_backward)) {
 
         //get mem address
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(indices), x_tmp_0);
-        ldr(XReg(IDX(reg_index)), ptr(x_tmp_addr));
+        add_imm(x_tmp_addr, reg_param, GET_OFF(indices), x_tmp_0);
+        ldr(reg_index, ptr(x_tmp_addr));
     }
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kh_padding), x_tmp_0);
-    ldr(XReg(IDX(reg_kh)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(kh_padding), x_tmp_0);
+    ldr(reg_kh, ptr(x_tmp_addr));
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(kh_padding_shift),
-            x_tmp_0);
-    ldr(XReg(IDX(reg_k_shift)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(kh_padding_shift), x_tmp_0);
+    ldr(reg_k_shift, ptr(x_tmp_addr));
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(ker_area_h), x_tmp_0);
-    ldr(XReg(IDX(reg_ker_area_h)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(ker_area_h), x_tmp_0);
+    ldr(reg_ker_area_h, ptr(x_tmp_addr));
 
     //get mem address
-    add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(ur_bc), x_tmp_0);
-    ldr(XReg(IDX(reg_nbc)), ptr(x_tmp_addr));
+    add_imm(x_tmp_addr, reg_param, GET_OFF(ur_bc), x_tmp_0);
+    ldr(reg_nbc, ptr(x_tmp_addr));
 
     if (jpp.is_bf16) {
         /*
@@ -3147,16 +2176,16 @@ void jit_uni_pool_kernel<isa>::generate() {
         auto dt_size = jpp.dt_size;
         //auto shift = (isa == sse41) ? vlen : 0;
         auto shift = (isa == asimd) ? vlen : 0;
-        add_imm(XReg(IDX(reg_input)), XReg(IDX(reg_input)),
+        add_imm(reg_input, reg_input,
                 (dt_size * (ur_w * stride_w - lpad) * c_off - shift), x_tmp_0);
 
-        add_imm(XReg(IDX(reg_output)), XReg(IDX(reg_output)),
-                (dt_size * ur_w * c_off - shift), x_tmp_0);
+        add_imm(reg_output, reg_output, (dt_size * ur_w * c_off - shift),
+                x_tmp_0);
         if (jpp.alg == pooling_max && (jpp.is_training || jpp.is_backward)) {
             //auto ishift = (isa == sse41) ? jpp.c_block / 2 : 0;
             auto ishift = (isa == asimd) ? jpp.c_block / 2 : 0;
             auto ind_dt_size = types::data_type_size(jpp.ind_dt);
-            add_imm(XReg(IDX(reg_index)), XReg(IDX(reg_index)),
+            add_imm(reg_index, reg_index,
                     ((ur_w * c_off - ishift) * ind_dt_size), x_tmp_0);
         }
     };
@@ -3180,25 +2209,14 @@ void jit_uni_pool_kernel<isa>::generate() {
         }
 
         if (jpp.alg == pooling_avg_include_padding) {
-            mov_imm(XReg(IDX(tmp_gpr)), float2int((float)(kw * kh * jpp.kd)));
+            mov_imm(tmp_gpr, float2int((float)(kw * kh * jpp.kd)));
 
             ptrue(p_tmp0.d, VL2);
             mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, 0);
             ptrue(p_tmp0.d, VL1);
-            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, XReg(IDX(tmp_gpr)));
+            mov(ZRegD(IDX(xmm_tmp)), p_tmp0 / T_m, tmp_gpr);
 
-            int vlen = cpu_isa_traits<isa>::vlen;
-            if (vlen == 64) {
                 dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-            } else if (vlen == 32) {
-                dup(ZRegS(IDX(vmm_tmp)), ZRegS(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vmm_tmp)), P_MSB_256 / T_m, 0);
-            } else if (vlen == 16) {
-                dup(VReg4S(IDX(vmm_tmp)), VReg4S(IDX(xmm_tmp))[0]);
-                mov(ZRegS(IDX(vmm_tmp)), P_MSB_384 / T_m, 0);
-            } else {
-                assert(!"unreachable");
-            }
         }
 
         if (jpp.alg == pooling_max && (jpp.is_training || jpp.is_backward)) {
@@ -3259,7 +2277,7 @@ void jit_uni_pool_kernel<isa>::generate() {
 
     if (jpp.ur_bc_tail > 0) {
         mov_imm(x_tmp_0, jpp.ur_bc);
-        cmp(XReg(IDX(reg_nbc)), x_tmp_0);
+        cmp(reg_nbc, x_tmp_0);
 
         b(NE, ur_bc_tail_label);
     } else if (jpp.c_tail != 0) {
@@ -3268,13 +2286,13 @@ void jit_uni_pool_kernel<isa>::generate() {
         // If reg_nbc + tmp_gpr == jpp.nb_c then this is
         // information that probably channel tail processing will be needed.
         /* get mem address */
-        add_imm(x_tmp_addr, XReg(IDX(reg_param)), GET_OFF(b_c), x_tmp_0);
-        ldr(XReg(IDX(tmp_gpr)), ptr(x_tmp_addr));
+        add_imm(x_tmp_addr, reg_param, GET_OFF(b_c), x_tmp_0);
+        ldr(tmp_gpr, ptr(x_tmp_addr));
 
-        add(XReg(IDX(tmp_gpr)), XReg(IDX(tmp_gpr)), XReg(IDX(reg_nbc)));
+        add(tmp_gpr, tmp_gpr, reg_nbc);
 
         mov_imm(x_tmp_0, jpp.nb_c);
-        cmp(XReg(IDX(tmp_gpr)), x_tmp_0);
+        cmp(tmp_gpr, x_tmp_0);
 
         b(Xbyak_aarch64::EQ, c_tail_processing_label);
     }

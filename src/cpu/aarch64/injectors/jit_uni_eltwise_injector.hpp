@@ -117,9 +117,7 @@ struct jit_uni_eltwise_injector_f32 {
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs);
     void compute_vector(size_t idx) { compute_vector_range(idx, idx + 1); }
     void prepare_table(bool gen_table = true);
-    void load_table_addr() {
-        h->adr(Xbyak_aarch64::XReg(x_table.getIdx()), l_table);
-    }
+    void load_table_addr() { h->adr(x_table, l_table); }
 
 private:
     const alg_kind_t alg_;
@@ -306,13 +304,12 @@ private:
 
     TRegS table_val(key_t key, size_t key_off_val_shift = 0) {
         Xbyak_aarch64::XReg x_addr(h->X_DEFAULT_ADDR);
-        uint32_t tableIdx = static_cast<uint32_t>(x_table.getIdx());
         auto off = table_off(key, key_off_val_shift);
 
         if (off) {
-            h->add_imm(x_addr, Xbyak_aarch64::XReg(tableIdx), off, h->X_TMP_0);
+            h->add_imm(x_addr, x_table, off, h->X_TMP_0);
         } else {
-            x_addr = Xbyak_aarch64::XReg(tableIdx);
+            x_addr = x_table;
         }
 
         h->ldr(TReg(z_tmp.getIdx()), ptr(x_addr));

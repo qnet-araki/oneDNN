@@ -1030,54 +1030,15 @@ void jit_uni_binary_injector_t<isa>::load_rhs_tail(
 
     const auto &tail_opmask = rhs_arg_static_params_.tail_opmask;
     //host_->uni_vxorps(tmp_vmm, tmp_vmm, tmp_vmm);
-    int vlen = cpu_isa_traits<isa>::vlen;
-    if (vlen == 64) {
-        CG::eor(xa::ZReg(IDX(tmp_vmm)).d, xa::ZReg(IDX(tmp_vmm)).d,
-                xa::ZReg(IDX(tmp_vmm)).d);
-    } else if (vlen == 32) {
-        CG::ptrue(xa::PRegB(1), xa::VL32);
-        CG::eor(xa::ZReg(IDX(tmp_vmm)).d, xa::ZReg(IDX(tmp_vmm)).d,
-                xa::ZReg(IDX(tmp_vmm)).d);
-        CG::mov(xa::ZReg(IDX(tmp_vmm)).s, xa::PReg(1) / xa::T_m, 0);
-    } else if (vlen == 16) {
-        CG::eor(xa::VReg16B(IDX(tmp_vmm)), xa::VReg16B(IDX(tmp_vmm)),
-                xa::VReg16B(IDX(tmp_vmm)));
-    } else {
-        assert(!"unreachable");
-    }
+    CG::eor(xa::ZRegD(IDX(tmp_vmm)), xa::ZRegD(IDX(tmp_vmm)),
+            xa::ZRegD(IDX(tmp_vmm)));
     switch (data_type) {
         case data_type::f32:
         case data_type::s32:
             //host_->vmovups(tmp_vmm | tail_opmask | host_->T_z, rhs_addr);
-            if (vlen == 64) {
                 CG::ld1w(xa::ZRegS(IDX(tmp_vmm)),
                         xa::PReg(IDX(tail_opmask)) / xa::T_z,
                         xa::ptr(rhs_addr.getXn()));
-            } else if (vlen == 32) {
-                CG::sub(xa::XReg(22), xa::XReg(22), 8);
-                CG::str(xa::PReg(7), xa::ptr(xa::XReg(22)));
-                CG::ptrue(xa::PRegB(7));
-                CG::ptrue(xa::PRegB(14), xa::VL32);
-                CG::bic(xa::PRegB(7), xa::PReg(7) / xa::T_z,
-                        xa::PRegB(IDX(tail_opmask)), xa::PRegB(14));
-                CG::ld1w(xa::ZRegS(IDX(tmp_vmm)), xa::PReg(7) / xa::T_z,
-                        xa::ptr(rhs_addr.getXn()));
-                CG::ldr(xa::PReg(7), xa::ptr(xa::XReg(22)));
-                CG::add(xa::XReg(22), xa::XReg(22), 8);
-            } else if (vlen == 16) {
-                CG::sub(xa::XReg(22), xa::XReg(22), 8);
-                CG::str(xa::PReg(7), xa::ptr(xa::XReg(22)));
-                CG::ptrue(xa::PRegB(7));
-                CG::ptrue(xa::PRegB(13), xa::VL16);
-                CG::bic(xa::PRegB(7), xa::PReg(7) / xa::T_z,
-                        xa::PRegB(IDX(tail_opmask)), xa::PRegB(13));
-                CG::ld1w(xa::ZRegS(IDX(tmp_vmm)), xa::PReg(7) / xa::T_z,
-                        xa::ptr(rhs_addr.getXn()));
-                CG::ldr(xa::PReg(7), xa::ptr(xa::XReg(22)));
-                CG::add(xa::XReg(22), xa::XReg(22), 8);
-            } else {
-                assert(!"unreachable");
-            }
             break;
         case data_type::s8:
             /*
@@ -1198,8 +1159,8 @@ void jit_uni_binary_injector_t<isa>::execute_binary(alg_kind_t binary_alg,
     switch (binary_alg) {
         case alg_kind::binary_add:
             //host_->uni_vaddps(dst, lhs, rhs);
-            CG::fadd(xa::ZReg(IDX(dst)).s, xa::ZReg(IDX(lhs)).s,
-                    xa::ZReg(IDX(rhs)).s);
+            CG::fadd(xa::ZRegS(IDX(dst)), xa::ZRegS(IDX(lhs)),
+                    xa::ZRegS(IDX(rhs)));
             break;
             /*
         case alg_kind::binary_mul: host_->uni_vmulps(dst, lhs, rhs); break;
@@ -1221,8 +1182,7 @@ void jit_uni_binary_injector_t<isa>::execute_binary(alg_kind_t binary_alg,
     switch (binary_alg) {
         case alg_kind::binary_add:
             CG::ldr(xa::ZReg(31), xa::ptr(rhs.getXn()));
-            CG::fadd(
-                    xa::ZReg(IDX(dst)).s, xa::ZReg(IDX(lhs)).s, xa::ZReg(31).s);
+            CG::fadd(xa::ZRegS(IDX(dst)), xa::ZRegS(IDX(lhs)), xa::ZRegS(31));
             break;
             /*
         case alg_kind::binary_mul: host_->uni_vmulps(dst, lhs, rhs); break;
