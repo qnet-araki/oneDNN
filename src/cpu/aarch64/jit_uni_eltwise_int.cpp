@@ -1,3 +1,4 @@
+#define	OTAMESHI
 /*******************************************************************************
 * Copyright 2020 Intel Corporation
 *
@@ -29,6 +30,9 @@ namespace cpu {
 namespace aarch64 {
 
 using namespace Xbyak;
+using namespace Xbyak_aarch64;
+
+#define IDX(a) static_cast<uint32_t>(a.getIdx())
 
 struct jit_args {
     const void *from;
@@ -73,8 +77,11 @@ struct jit_uni_subkernel_int : public jit_uni_eltwise_int_kernel,
         assert(utils::one_of(desc.alg_kind, alg_kind::eltwise_relu,
                 alg_kind::eltwise_linear));
         assert(utils::one_of(data_type(), s32, s8, u8));
+#if 0
         assert(utils::one_of(isa, sse41, avx2, avx512_common));
-
+#else
+        assert(utils::one_of(isa, avx512_common));
+#endif
         Reg64 param = abi_param1;
 
         const size_t vlen = cpu_isa_traits<isa>::vlen;
@@ -87,40 +94,121 @@ struct jit_uni_subkernel_int : public jit_uni_eltwise_int_kernel,
         preamble();
 
 #define GET_OFF(field) offsetof(jit_args, field)
+#if 0
         mov(reg_from, ptr[param + GET_OFF(from)]);
         mov(reg_to, ptr[param + GET_OFF(to)]);
         mov(reg_work_amount, ptr[param + GET_OFF(work_amount)]);
+#else
+        CGA64::add_imm(X_TMP_0, XReg(IDX(param)), GET_OFF(from), X_TMP_1);
+        CGA64::ldr(XReg(IDX(reg_from)), xa::ptr(X_TMP_0));
+
+        CGA64::add_imm(X_TMP_0, XReg(IDX(param)), GET_OFF(to), X_TMP_1);
+        CGA64::ldr(XReg(IDX(reg_to)), xa::ptr(X_TMP_0));
+
+        CGA64::add_imm(
+                X_TMP_0, XReg(IDX(param)), GET_OFF(work_amount), X_TMP_1);
+        CGA64::ldr(XReg(IDX(reg_work_amount)), xa::ptr(X_TMP_0));
+#endif
 #undef GET_OFF
 
+#if 0
         mov(imm_addr64, float2int(desc.alpha));
         uni_vmovq(xmm_alpha, imm_addr64);
         uni_vbroadcastss(vmm_alpha, xmm_alpha);
+#else
+        std::cout << "Debug:jit_uni_subkernel_int L" << __LINE__ << std::endl;
+        CGA64::mov_imm(WReg(IDX(X_TMP_0)), float2int(desc.alpha));
+        CGA64::sxtw(XReg(IDX(imm_addr64)), WReg(IDX(X_TMP_0)));
 
+        CGA64::bic(VReg(IDX(xmm_alpha)).b16, VReg(IDX(xmm_alpha)).b16,
+                VReg(IDX(xmm_alpha)).b16);
+        CGA64::mov(VReg(IDX(xmm_alpha)).d[0], XReg(IDX(imm_addr64)));
+
+        //CGA64::dup(ZRegS(IDX(vmm_alpha)), ZRegS(IDX(xmm_alpha))[0]);
+        CGA64::dup(vmm_alpha, ZRegS(IDX(xmm_alpha))[0]);
+#endif
+
+#if 0
         mov(imm_addr64, float2int(desc.beta));
         uni_vmovq(xmm_beta, imm_addr64);
         uni_vbroadcastss(vmm_beta, xmm_beta);
+#else
+        CGA64::mov_imm(WReg(IDX(X_TMP_0)), float2int(desc.beta));
+        CGA64::sxtw(XReg(IDX(imm_addr64)), WReg(IDX(X_TMP_0)));
 
+        CGA64::bic(VReg(IDX(xmm_beta)).b16, VReg(IDX(xmm_beta)).b16,
+                VReg(IDX(xmm_beta)).b16);
+        CGA64::mov(VReg(IDX(xmm_beta)).d[0], XReg(IDX(imm_addr64)));
+
+        //CGA64::dup(ZRegS(IDX(vmm_beta)), ZRegS(IDX(xmm_beta))[0]);
+        CGA64::dup(vmm_beta, ZRegS(IDX(xmm_beta))[0]);
+#endif
+
+#if 0
         uni_vpxor(vmm_zero, vmm_zero, vmm_zero);
         xor_(reg_int8, reg_int8);
+#else
+        CGA64::eor(ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)),
+                ZRegD(IDX(vmm_zero)));
+        CGA64::eor(
+                XReg(IDX(reg_int8)), XReg(IDX(reg_int8)), XReg(IDX(reg_int8)));
+#endif
         if (isa == avx512_common) {
+#if 0
             mov(reg_int8.cvt8(), 0x01);
             kmovw(k_mask_int8, reg_int8.cvt32());
+#else
+            std::cout << "Debug:jit_uni_subkernel_int L" << __LINE__
+                      << std::endl;
+            CGA64::and_(X_TMP_1, XReg(IDX(reg_int8)), ~uint64_t(0xff));
+            CGA64::mov(W_TMP_0, 0x01);
+            CGA64::orr(XReg(IDX(reg_int8)), X_TMP_0, X_TMP_1);
+
+            CGA64::mov(PRegB(IDX(k_mask_int8)), P_ALL_ONE.b);
+            CGA64::index(ZRegS(IDX(z_tmp)), 0, 1);
+            CGA64::mov(ZRegS(IDX(z_tmp0)), 1);
+            CGA64::lsl(ZRegS(IDX(z_tmp0)), PReg(IDX(k_mask_int8)) / T_m,
+                    ZRegS(IDX(z_tmp)));
+            CGA64::dup(ZRegS(IDX(z_tmp)), WReg(IDX(reg_int8)));
+            CGA64::and_(
+                    ZRegD(IDX(z_tmp)), ZRegD(IDX(z_tmp)), ZRegD(IDX(z_tmp0)));
+            CGA64::cmpne(PRegS(IDX(k_mask_int8)), PReg(IDX(k_mask_int8)),
+                    ZRegS(IDX(z_tmp)), 0);
+#endif
         }
 
         Label loop_label[3];
 
         for (int id = 0; id < 2; id++) {
             L(loop_label[id]);
+#if 0
             cmp(reg_work_amount, uf[id] * loop_dec[id] - 1);
+#else
+            CGA64::mov_imm(X_TMP_0, uf[id] * loop_dec[id] - 1);
+            CGA64::cmp(XReg(IDX(reg_work_amount)), X_TMP_0);
+#endif
+#if 0
             jle(loop_label[id + 1], T_NEAR);
+#else
+            CGA64::b(LE, loop_label[id + 1]);
+#endif
 
             compute_step(loop_vectorize[id], uf[id], shift[id], desc.alg_kind);
 
+#if 0
             add(reg_from, uf[id] * shift[id]);
             add(reg_to, uf[id] * shift[id]);
-
             sub(reg_work_amount, uf[id] * loop_dec[id]);
             jmp(loop_label[id]);
+#else
+            CGA64::add_imm(XReg(IDX(reg_from)), XReg(IDX(reg_from)),
+                    uf[id] * shift[id], X_TMP_0);
+            CGA64::add_imm(XReg(IDX(reg_to)), XReg(IDX(reg_to)),
+                    uf[id] * shift[id], X_TMP_0);
+            CGA64::sub_imm(XReg(IDX(reg_work_amount)),
+                    XReg(IDX(reg_work_amount)), uf[id] * loop_dec[id], X_TMP_0);
+            CGA64::b(loop_label[id]);
+#endif
         }
 
         L(loop_label[2]);
@@ -139,14 +227,32 @@ private:
     Reg64 imm_addr64 = rbx;
     Reg64 reg_int8 = r9;
 
+#if 1
+    ZReg z_tmp {31};
+    ZReg z_tmp0 {30};
+
+    PReg p_tmp {0};
+#endif
+
+#if 0
     Xmm xmm_alpha = Xmm(13);
     Xmm xmm_beta = Xmm(14);
+#else
+    XReg xmm_alpha = XReg(13);
+    XReg xmm_beta = XReg(14);
+#endif
 
     Vmm vmm_tmp = Vmm(isa == avx512_common ? 26 : 11);
+#if 0
     Vmm vmm_alpha = Vmm(isa == avx512_common ? 27 : 13);
     Vmm vmm_beta = Vmm(isa == avx512_common ? 28 : 14);
     Vmm vmm_zero = Vmm(isa == avx512_common ? 29 : 15);
     Vmm vmm_mask = Vmm(isa == avx512_common ? 30 : 12);
+#else
+    ZRegS vmm_alpha = ZRegS(27);
+    ZRegS vmm_beta = ZRegS(28);
+    Vmm vmm_zero = Vmm(29);
+#endif
 
     opmask_t k_mask = k1;
     opmask_t k_mask_int8 = k2; // Mask for store 1 byte in case of AVX512
@@ -159,10 +265,26 @@ private:
 
         if (vectorize) {
             // load full Vmm size
+            std::cout << "Debug:load_32bit L" << __LINE__ << std::endl;
+#if 0
             uni_vmovups(vr_from, mem_from);
+#else
+            CGA64::ldr(ZReg(IDX(vr_from)), xa::ptr(XReg(IDX(mem_from))));
+#endif
         } else {
             // load exactly one data item
+#if 0
             movss(Xmm(vr_from.getIdx()), mem_from);
+#else
+            std::cout << "Debug:load_32bit L" << __LINE__ << std::endl;
+            CGA64::ptrue(PRegS(IDX(p_tmp)), VL4);
+            CGA64::ldr(W_TMP_0, xa::ptr(XReg(IDX(mem_from))));
+            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))),
+                    PReg(IDX(p_tmp)) / T_m, 0);
+            CGA64::ptrue(PRegS(IDX(p_tmp)), VL1);
+            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))),
+                    PReg(IDX(p_tmp)) / T_m, W_TMP_0);
+#endif
         }
     }
 
@@ -174,17 +296,73 @@ private:
         if (vectorize) {
             // load full Vmm size
             if (is_signed)
+#if 0
                 uni_vpmovsxbd(vr_from, mem_from);
-            else
+#else
+            {
+                std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+                CGA64::ldr(QReg(IDX(z_tmp)), xa::ptr(XReg(IDX(mem_from))));
+                CGA64::zip1(ZReg(IDX(z_tmp)).b, ZReg(IDX(z_tmp)).b,
+                        ZReg(IDX(z_tmp)).b);
+                CGA64::zip1(ZReg(IDX(z_tmp)).h, ZReg(IDX(z_tmp)).h,
+                        ZReg(IDX(z_tmp)).h);
+                CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+                CGA64::sxtb(ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m,
+                        ZReg(IDX(z_tmp)).s);
+            }
+#endif
+                else
+#if 0
                 uni_vpmovzxbd(vr_from, mem_from);
+#else
+            {
+                std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+                CGA64::ldr(QReg(IDX(z_tmp)), xa::ptr(XReg(IDX(mem_from))));
+                CGA64::zip1(ZReg(IDX(z_tmp)).b, ZReg(IDX(z_tmp)).b,
+                        ZReg(IDX(z_tmp)).b);
+                CGA64::zip1(ZReg(IDX(z_tmp)).h, ZReg(IDX(z_tmp)).h,
+                        ZReg(IDX(z_tmp)).h);
+                CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+                CGA64::uxtb(ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m,
+                        ZReg(IDX(z_tmp)).s);
+            }
+#endif
         } else {
             // load exactly one data item
+#if 0
             mov(reg_int8.cvt8(), mem_from);
+#else
+            std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+            CGA64::ldurb(W_TMP_0, xa::ptr(XReg(IDX(mem_from))));
+            CGA64::and_(X_TMP_1, XReg(IDX(reg_int8.cvt8())), ~uint64_t(0xff));
+            CGA64::orr(XReg(IDX(reg_int8.cvt8())), X_TMP_0, X_TMP_1);
+#endif
+#if 0
             if (is_signed)
                 movsx(reg_int8.cvt32(), reg_int8.cvt8());
             else
                 movzx(reg_int8.cvt32(), reg_int8.cvt8());
+#else
+            if (is_signed) {
+                std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+                CGA64::sxtb(WReg(IDX(reg_int8.cvt32())),
+                        WReg(IDX(reg_int8.cvt8())));
+            } else {
+                std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+                CGA64::uxtb(WReg(IDX(reg_int8.cvt32())),
+                        WReg(IDX(reg_int8.cvt8())));
+            }
+#endif
+#if 0
             uni_vmovq(Xmm(vr_from.getIdx()), reg_int8);
+#else
+            std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+            CGA64::bic(VReg(IDX(Xmm(vr_from.getIdx()))).b16,
+                    VReg(IDX(Xmm(vr_from.getIdx()))).b16,
+                    VReg(IDX(Xmm(vr_from.getIdx()))).b16);
+            CGA64::mov(
+                    VReg(IDX(Xmm(vr_from.getIdx()))).d[0], XReg(IDX(reg_int8)));
+#endif
         }
     }
 
@@ -204,23 +382,61 @@ private:
     void process_linear(const Vmm &vr_to, const Vmm &vr_from);
     void process_relu(const Vmm &vr_to, const Vmm &vr_from);
 
+#ifndef OTAMESHI 
     // Store s32 for any isa
     void store_32bit(
             const bool vectorize, const Address &mem_to, const Vmm &vr_to) {
         if (vectorize) {
             // store full Vmm size
-            uni_vmovups(mem_to, vr_to);
+#if 1
+            uni_vmovups(mem_to, vr_to); // postponed
+#else
+            std::cout << "Debug:store_32bit L" << __LINE__ << std::endl;
+            CGA64::str(ZReg(IDX(vr_to)), xa::ptr(XReg(IDX(mem_to))));
+//  ###(benchi test) FAILED with pattern without --inplace = true
+#endif
         } else {
             // store exactly one data item
-            movss(mem_to, Xmm(vr_to.getIdx()));
+#if 1
+            movss(mem_to, Xmm(vr_to.getIdx())); // postponed
+#else
+            std::cout << "Debug:store_32bit L" << __LINE__ << std::endl;
+            CGA64::ptrue(PRegS(IDX(p_tmp)), VL1);
+            CGA64::st1w(ZRegS(IDX(Xmm(vr_to.getIdx()))), PReg(IDX(p_tmp)),
+                    xa::ptr(XReg(IDX(mem_to))));
+// ###(benchi test) FAILED with pattern without --inplace = true
+#endif
         }
     }
 
     // Store 8 bit int - isa-dependent
     void store_8bit(const bool vectorize, const Address &mem_to,
             const Vmm &vr_to, bool is_signed);
+#else
+    // Store s32 for any isa
+    void store_32bit(
+            const bool vectorize, const XReg &mem_to, const Vmm &vr_to) {
+        if (vectorize) {
+            // store full Vmm size
+            std::cout << "Debug:store_32bit L" << __LINE__ << std::endl;
+            CGA64::str(ZReg(IDX(vr_to)), xa::ptr(mem_to));
+        } else {
+            // store exactly one data item
+            std::cout << "Debug:store_32bit L" << __LINE__ << std::endl;
+            CGA64::ptrue(PRegS(IDX(p_tmp)), VL1);
+            CGA64::st1w(ZRegS(IDX(Xmm(vr_to.getIdx()))), PReg(IDX(p_tmp)),
+                    xa::ptr(mem_to));
+#endif
+        }
+    }
+
+    // Store 8 bit int - isa-dependent
+    void store_8bit(const bool vectorize, const XReg &mem_to,
+            const Vmm &vr_to, bool is_signed);
+#endif
 
     // Store results from vregs to mem
+#ifndef OTAMESHI 
     void store(const bool vectorize, const Address &mem_to, const Vmm &vr_to) {
         // Branching on data size
         if (is32bit())
@@ -228,6 +444,15 @@ private:
         else
             store_8bit(vectorize, mem_to, vr_to, data_type() == data_type::s8);
     }
+#else
+    void store(const bool vectorize, const XReg &mem_to, const Vmm &vr_to) {
+        // Branching on data size
+        if (is32bit())
+            store_32bit(vectorize, mem_to, vr_to);
+        else
+            store_8bit(vectorize, mem_to, vr_to, data_type() == data_type::s8);
+    }
+#endif
 
     void compute_step(bool vectorize, const size_t uf, const size_t shift,
             const alg_kind_t alg) {
@@ -253,26 +478,63 @@ private:
         }
 
         // 3. Store (mem <- vregs)
+#ifndef OTAMESHI
         for (size_t i = 0; i < uf; i++)
             store(vectorize, ptr[reg_to + i * shift], vreg_to(i));
+#else
+        for (size_t i = 0; i < uf; i++){
+            CGA64::add_imm(X_TMP_2,XReg(IDX(reg_to)),i * shift,X_TMP_1);
+            store(vectorize, X_TMP_2, vreg_to(i));
+        }
+#endif
     }
 };
 
 template <cpu_isa_t isa>
 void jit_uni_subkernel_int<isa>::process_linear(
         const Vmm &vr_to, const Vmm &vr_from) {
+    std::cout << "Debug:process_linear L" << __LINE__ << std::endl;
+
+#if 0
     uni_vcvtdq2ps(vr_to, vr_from);
+#else
+    CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+    CGA64::scvtf(
+            ZReg(IDX(vr_to)).s, PReg(IDX(p_tmp)) / T_m, ZReg(IDX(vr_from)).s);
+#endif
+#if 0
     uni_vfmadd213ps(vr_to, vmm_alpha, vmm_beta);
+#else
+    // ###Manually merge code generated by the indirect method
+    CGA64::sub_imm(XReg(22), XReg(22), 0x08, X_TMP_0);
+    CGA64::str(PReg(7), xa::ptr(XReg(22)));
+    CGA64::mov(PReg(7).b, PReg(15).b);
+    //CGA64::fmad(ZReg(2).s,PReg(7)/T_m,ZReg(27).s,ZReg(28).s);
+    CGA64::fmad(ZReg(2).s, PReg(7) / T_m, vmm_alpha, vmm_beta);
+    CGA64::ldr(PReg(7), xa::ptr(XReg(22)));
+    CGA64::add_imm(XReg(22), XReg(22), 0x08, X_TMP_0);
+#endif
 
     // Saturate before converting from f32 to s32
     Vmm vmm_saturation_ubound = vmm_tmp;
     Reg64 reg_tmp = r10;
+#if 0
     uni_vpxor(vmm_zero, vmm_zero, vmm_zero);
+#else
+    CGA64::eor(
+            ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)));
+#endif
     init_saturate_f32(vmm_zero, vmm_saturation_ubound, reg_tmp, data_type::f32,
             data_type());
     saturate_f32(vr_to, vmm_zero, vmm_saturation_ubound, data_type());
 
+#if 0
     uni_vcvtps2dq(vr_to, vr_to);
+#else
+    CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
+    CGA64::frinti(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+    CGA64::fcvtzs(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+#endif
 }
 
 template <cpu_isa_t isa>
@@ -281,6 +543,7 @@ void jit_uni_subkernel_int<isa>::process_relu(
     assert(!"unsupported isa");
 }
 
+#if 0
 template <>
 void jit_uni_subkernel_int<sse41>::process_relu(
         const Vmm &vr_to, const Vmm &vr_from) {
@@ -306,18 +569,49 @@ void jit_uni_subkernel_int<avx2>::process_relu(
     vblendvps(vr_to, vr_to, vr_from, vmm_mask);
     vcvtps2dq(vr_to, vr_to);
 }
+#endif
 
 template <>
 void jit_uni_subkernel_int<avx512_common>::process_relu(
         const Vmm &vr_to, const Vmm &vr_from) {
 
+    std::cout << "Debug:process_relu L" << __LINE__ << std::endl;
+#if 0
     vcvtdq2ps(vr_from, vr_from);
+#else
+    CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+    CGA64::scvtf(
+            ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m, ZReg(IDX(vr_from)).s);
+#endif
+#if 0
     vmulps(vr_to, vr_from, vmm_alpha);
+#else
+    //CGA64::fmul(ZReg(IDX(vr_to)).s, ZReg(IDX(vr_from)).s, ZReg(IDX(vmm_alpha)).s);
+    CGA64::fmul(ZReg(IDX(vr_to)).s, ZReg(IDX(vr_from)).s, vmm_alpha);
+#endif
+#if 0
     vcmpps(k_mask, vr_from, vmm_zero, _cmp_nle_us);
+#else
+    CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
+    CGA64::fcmgt(PRegS(IDX(k_mask)), PReg(IDX(p_tmp)) / xa::T_z,
+            ZRegS(IDX(vr_from)), ZRegS(IDX(vmm_zero)));
+#endif
+#if 0
     vblendmps(vr_to | k_mask, vr_to, vr_from);
+#else
+    CGA64::sel(ZRegS(IDX(vr_to)), PReg(IDX(k_mask)) / T_m, ZRegS(IDX(vr_from)),
+            ZRegS(IDX(vr_to)));
+#endif
+#if 0
     vcvtps2dq(vr_to, vr_to);
+#else
+    CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
+    CGA64::frinti(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+    CGA64::fcvtzs(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+#endif
 }
 
+#if 0
 template <cpu_isa_t isa>
 void jit_uni_subkernel_int<isa>::store_8bit(const bool vectorize,
         const Address &mem_to, const Vmm &vr_to, bool is_signed) {
@@ -379,25 +673,123 @@ void jit_uni_subkernel_int<avx2>::store_8bit(const bool vectorize,
         mov(mem_to, reg_int8.cvt8());
     }
 }
+#endif
 
+#ifndef OTAMESHI
 template <>
 void jit_uni_subkernel_int<avx512_common>::store_8bit(const bool vectorize,
         const Address &mem_to, const Vmm &vr_to, bool is_signed) {
     if (vectorize) {
         // store full Vmm size
         if (is_signed)
-            vpmovsdb(mem_to, vr_to);
+#if 1
+            vpmovsdb(mem_to, vr_to); // postponed
+#else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::smin(ZRegS(IDX(z_tmp)), 127);
+            CGA64::smax(ZRegS(IDX(z_tmp)), -128);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)),
+                    xa::ptr(XReg(IDX(mem_to))));
+            //  ###(benchi test) FAILED with pattern without --inplace = true
+        }
+#endif
         else
-            vpmovusdb(mem_to, vr_to);
+#if 1
+            vpmovusdb(mem_to, vr_to); // postponed
+#else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::umin(ZRegS(IDX(z_tmp)), 255);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)),
+                    xa::ptr(XReg(IDX(mem_to))));
+            //  ###(benchi test) FAILED with pattern without --inplace = true
+        }
+#endif
     } else {
         // store exactly one data item
         // s32 save as s8/u8
         if (is_signed)
-            vpmovsdb(mem_to, vr_to | k_mask_int8);
+#if 1
+            vpmovsdb(mem_to, vr_to | k_mask_int8); // postponed
+#else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::smin(ZRegS(IDX(z_tmp)), 127);
+            CGA64::smax(ZRegS(IDX(z_tmp)), -128);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)),
+                    xa::ptr(XReg(IDX(mem_to))));
+            //  ###(benchi test) FAILED with pattern without --inplace = true
+        }
+#endif
         else
-            vpmovusdb(mem_to, vr_to | k_mask_int8);
+#if 1
+            vpmovusdb(mem_to, vr_to | k_mask_int8); // postponed
+#else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::umin(ZRegS(IDX(z_tmp)), 255);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)),
+                    xa::ptr(XReg(IDX(mem_to))));
+            //  ###(benchi test) FAILED with pattern without --inplace = true
+        }
+#endif
     }
 }
+#else
+template <>
+void jit_uni_subkernel_int<avx512_common>::store_8bit(const bool vectorize,
+        const XReg &mem_to, const Vmm &vr_to, bool is_signed) {
+    if (vectorize) {
+        // store full Vmm size
+        if (is_signed)
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::smin(ZRegS(IDX(z_tmp)), 127);
+            CGA64::smax(ZRegS(IDX(z_tmp)), -128);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)),
+                    xa::ptr(mem_to));
+        }
+        else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::umin(ZRegS(IDX(z_tmp)), 255);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)),
+                    xa::ptr(mem_to));
+        }
+    } else {
+        // store exactly one data item
+        // s32 save as s8/u8
+        if (is_signed)
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::smin(ZRegS(IDX(z_tmp)), 127);
+            CGA64::smax(ZRegS(IDX(z_tmp)), -128);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)),
+                    xa::ptr(mem_to));
+        }
+        else
+        {
+            std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
+            CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
+            CGA64::umin(ZRegS(IDX(z_tmp)), 255);
+            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)),
+                    xa::ptr(mem_to));
+        }
+    }
+}
+#endif
 
 } /* namespace */
 
@@ -460,16 +852,16 @@ void jit_uni_eltwise_int_fwd_t<isa, d_type>::execute_forward(
 
 using namespace data_type;
 
-template struct jit_uni_eltwise_int_fwd_t<sse41, s32>;
-template struct jit_uni_eltwise_int_fwd_t<avx2, s32>;
+//template struct jit_uni_eltwise_int_fwd_t<sse41, s32>;
+//template struct jit_uni_eltwise_int_fwd_t<avx2, s32>;
 template struct jit_uni_eltwise_int_fwd_t<avx512_common, s32>;
 
-template struct jit_uni_eltwise_int_fwd_t<sse41, s8>;
-template struct jit_uni_eltwise_int_fwd_t<avx2, s8>;
+//template struct jit_uni_eltwise_int_fwd_t<sse41, s8>;
+//template struct jit_uni_eltwise_int_fwd_t<avx2, s8>;
 template struct jit_uni_eltwise_int_fwd_t<avx512_common, s8>;
 
-template struct jit_uni_eltwise_int_fwd_t<sse41, u8>;
-template struct jit_uni_eltwise_int_fwd_t<avx2, u8>;
+//template struct jit_uni_eltwise_int_fwd_t<sse41, u8>;
+//template struct jit_uni_eltwise_int_fwd_t<avx2, u8>;
 template struct jit_uni_eltwise_int_fwd_t<avx512_common, u8>;
 
 } // namespace aarch64
