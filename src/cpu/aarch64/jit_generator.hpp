@@ -384,26 +384,34 @@ public:
     }
     void uni_vpxor(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op) {
-        if (mayiuse(avx512_core))
+        if (mayiuse(avx512_core)) {
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxord(x1, x2, op);
-        else if (mayiuse(avx))
+        } else if (mayiuse(avx)) {
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxor(x1, x2, op);
-        else {
+        } else {
             assert(x1.isEqualIfNotInherited(x2));
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             pxor(x2, op);
         }
     }
     void uni_vpxor(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op) {
-        if (mayiuse(avx512_core))
+        if (mayiuse(avx512_core)) {
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxord(x1, x2, op);
-        else if (mayiuse(avx2))
+        } else if (mayiuse(avx2)) {
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxor(x1, x2, op);
-        else
+        } else {
+            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vxorps(x1, x2, op);
+        }
     }
     void uni_vpxor(const Xbyak::Zmm &x1, const Xbyak::Zmm &x2,
             const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
         vpxord(x1, x2, op);
     }
 
@@ -457,16 +465,20 @@ public:
     }
 
     void uni_vmovups(const Xbyak::Address &addr, const Xbyak::Xmm &x) {
+        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         movups(addr, x);
     }
     void uni_vmovups(const Xbyak::Address &addr, const Xbyak::Ymm &x) {
+        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         vmovups(addr, x);
     }
 
     void uni_vmovups(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         movups(x, op);
     }
     void uni_vmovups(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         vmovups(x, op);
     }
 
@@ -496,14 +508,19 @@ public:
     }
 
     void uni_vbroadcastss(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
         movss(x, op);
         shufps(x, x, 0x0);
     }
     void uni_vbroadcastss(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
         if (op.isMEM() || mayiuse(avx2)) {
+            std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
             vbroadcastss(x, op);
         } else {
             Xbyak::Xmm t(x.getIdx());
+            std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
+            std::cout << "Debug:t.isEqualIfNotInherited(op) = "
+                      << t.isEqualIfNotInherited(op) << std::endl;
             if (!t.isEqualIfNotInherited(op)) movss(t, op);
             vinsertf128(x, x, t, 1);
             vshufps(x, x, x, 0);
@@ -680,11 +697,13 @@ public:
         // Note: x1 gets overriden by x1*x2
         // This is incorrect if x1 == op
         assert(!x1.isEqualIfNotInherited(op));
+        std::cout << "Debug:uni_vfmadd213ps L" << __LINE__ << std::endl;
         mulps(x1, x2);
         addps(x1, op);
     }
     void uni_vfmadd213ps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vfmadd213ps L" << __LINE__ << std::endl;
         vfmadd213ps(x1, x2, op);
     }
 
@@ -882,10 +901,12 @@ public:
     }
 
     void uni_vpmovsxbd(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vpmovsxbd L" << __LINE__ << std::endl;
         pmovsxbd(x, op);
     }
 
     void uni_vpmovsxbd(const Xbyak::Ymm &y, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vpmovsxbd L" << __LINE__ << std::endl;
         vpmovsxbd(y, op);
     }
 
@@ -941,16 +962,20 @@ public:
     }
 
     void uni_vcvtps2dq(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vcvtps2dq L" << __LINE__ << std::endl;
         cvtps2dq(x, op);
     }
     void uni_vcvtps2dq(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vcvtps2dq L" << __LINE__ << std::endl;
         vcvtps2dq(x, op);
     }
 
     void uni_vcvtdq2ps(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vcvtdq2ps L" << __LINE__ << std::endl;
         cvtdq2ps(x, op);
     }
     void uni_vcvtdq2ps(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        std::cout << "Debug:uni_vcvtdq2ps L" << __LINE__ << std::endl;
         vcvtdq2ps(x, op);
     }
 
@@ -962,16 +987,22 @@ public:
     }
 
     void uni_vmovq(const Xbyak::Xmm &x, const Xbyak::Reg64 &r) {
-        if (mayiuse(avx))
+        if (mayiuse(avx)) {
+            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             vmovq(x, r);
-        else
+        } else {
+            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             movq(x, r);
+        }
     }
     void uni_vmovq(const Xbyak::Address &addr, const Xbyak::Xmm &x) {
-        if (mayiuse(avx))
+        if (mayiuse(avx)) {
+            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             vmovq(addr, x);
-        else
+        } else {
+            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             movq(addr, x);
+        }
     }
 
     void uni_vpackssdw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
@@ -1054,135 +1085,145 @@ public:
       the floating point register
      */
     template <typename Vmm>
+#if 0
     void init_saturate_f32(Vmm vmm_lbound, Vmm vmm_ubound, Xbyak::Reg64 reg_tmp,
             data_type_t idt, data_type_t odt) {
-        using namespace data_type;
-        if (!((idt == f32) && utils::one_of(odt, u8, s8, s32))) return;
+#else
+    void init_saturate_f32(Vmm vmm_lbound, Vmm vmm_ubound, xa::XReg reg_tmp,
+            data_type_t idt, data_type_t odt) {
+#endif
+    using namespace data_type;
+    if (!((idt == f32) && utils::one_of(odt, u8, s8, s32))) return;
 
-        assert(IMPLICATION(
-                idt == u8, vmm_lbound.getIdx() != vmm_ubound.getIdx()));
-        // No need to saturate on lower bound for signed integer types, as
-        // the conversion to int would return INT_MIN, and then proper
-        // saturation will happen in store_data
-        if (odt == u8) uni_vpxor(vmm_lbound, vmm_lbound, vmm_lbound);
+    assert(IMPLICATION(idt == u8, vmm_lbound.getIdx() != vmm_ubound.getIdx()));
+    // No need to saturate on lower bound for signed integer types, as
+    // the conversion to int would return INT_MIN, and then proper
+    // saturation will happen in store_data
+    if (odt == u8) uni_vpxor(vmm_lbound, vmm_lbound, vmm_lbound);
 
-        Xbyak::Xmm tmp(vmm_ubound.getIdx());
-        float saturation_ubound = types::max_value<float>(odt);
+    Xbyak::Xmm tmp(vmm_ubound.getIdx());
+    float saturation_ubound = types::max_value<float>(odt);
+#if 0
         mov(reg_tmp, float2int(saturation_ubound));
         uni_vmovq(tmp, reg_tmp);
-        if (vmm_ubound.isYMM() || vmm_ubound.isZMM())
-            uni_vbroadcastss(vmm_ubound, tmp);
-        else
-            uni_vshufps(vmm_ubound, tmp, tmp, 0);
-    }
+#else
+        CGA64::mov_imm(reg_tmp, float2int(saturation_ubound));
 
-    template <typename Vmm>
-    void saturate_f32(const Vmm &vmm, const Vmm &vmm_lbound,
-            const Vmm &vmm_ubound, data_type_t odt) {
-        // This function is used to saturate to odt in f32 before converting
-        // to s32 in order to avoid bad saturation due to cvtps2dq
-        // behavior (it returns INT_MIN if the f32 is out of the
-        // s32 range)
-        using namespace data_type;
-        if (!utils::one_of(odt, u8, s8, s32)) return;
+        CGA64::bic(xa::VReg(tmp.getIdx()).b16, xa::VReg(tmp.getIdx()).b16,
+                xa::VReg(tmp.getIdx()).b16);
+        CGA64::mov(xa::VReg(tmp.getIdx()).d[0], xa::XReg(reg_tmp.getIdx()));
+#endif
+    if (vmm_ubound.isYMM() || vmm_ubound.isZMM())
+        uni_vbroadcastss(vmm_ubound, tmp);
+    else
+        uni_vshufps(vmm_ubound, tmp, tmp, 0);
+}
 
-        // no need to apply lower saturation bound when odt is
-        // signed, as cvtps2dq will return MIN_INT if the value
-        // does not fit
-        if (odt == u8) {
-            if (mayiuse(avx))
-                vmaxps(vmm, vmm, vmm_lbound);
-            else
-                maxps(vmm, vmm_lbound);
-        }
+template <typename Vmm>
+void saturate_f32(const Vmm &vmm, const Vmm &vmm_lbound, const Vmm &vmm_ubound,
+        data_type_t odt) {
+    // This function is used to saturate to odt in f32 before converting
+    // to s32 in order to avoid bad saturation due to cvtps2dq
+    // behavior (it returns INT_MIN if the f32 is out of the
+    // s32 range)
+    using namespace data_type;
+    if (!utils::one_of(odt, u8, s8, s32)) return;
+
+    // no need to apply lower saturation bound when odt is
+    // signed, as cvtps2dq will return MIN_INT if the value
+    // does not fit
+    if (odt == u8) {
         if (mayiuse(avx))
-            vminps(vmm, vmm, vmm_ubound);
+            vmaxps(vmm, vmm, vmm_lbound);
         else
-            minps(vmm, vmm_ubound);
+            maxps(vmm, vmm_lbound);
     }
+    if (mayiuse(avx))
+        vminps(vmm, vmm, vmm_ubound);
+    else
+        minps(vmm, vmm_ubound);
+}
 
-    void dump_code32(const Xbyak::XBYAK_CODE_PTR *code) const {
-        if (code) {
-            static int counter = 0;
+void dump_code32(const Xbyak::XBYAK_CODE_PTR *code) const {
+    if (code) {
+        static int counter = 0;
 #define MAX_FNAME_LEN 256
-            char fname[MAX_FNAME_LEN + 1];
-            snprintf(fname, MAX_FNAME_LEN, "dnnl_dump_%s.%d.bin", name(),
-                    counter);
-            counter++;
+        char fname[MAX_FNAME_LEN + 1];
+        snprintf(fname, MAX_FNAME_LEN, "dnnl_dump_%s.%d.bin", name(), counter);
+        counter++;
 
-            FILE *fp = fopen(fname, "w+");
-            // Failure to dump code is not fatal
-            if (fp) {
+        FILE *fp = fopen(fname, "w+");
+        // Failure to dump code is not fatal
+        if (fp) {
 #ifdef DNNL_INDIRECT_JIT_AARCH64
-                size_t unused = fwrite(code, getSize() * 4, 1, fp);
+            size_t unused = fwrite(code, getSize() * 4, 1, fp);
 #else
                 size_t unused = fwrite(code, getSize(), 1, fp);
 #endif
-                UNUSED(unused);
-                fclose(fp);
-            }
+            UNUSED(unused);
+            fclose(fp);
         }
-#undef MAX_FNAME_LEN
     }
+#undef MAX_FNAME_LEN
+}
 
-    void dump_code(const Xbyak::uint8 *code) const {
-        if (code) {
-            static int counter = 0;
+void dump_code(const Xbyak::uint8 *code) const {
+    if (code) {
+        static int counter = 0;
 #define MAX_FNAME_LEN 256
-            char fname[MAX_FNAME_LEN + 1];
-            snprintf(fname, MAX_FNAME_LEN, "dnnl_dump_%s.%d.bin", name(),
-                    counter);
-            counter++;
+        char fname[MAX_FNAME_LEN + 1];
+        snprintf(fname, MAX_FNAME_LEN, "dnnl_dump_%s.%d.bin", name(), counter);
+        counter++;
 
-            FILE *fp = fopen(fname, "w+");
+        FILE *fp = fopen(fname, "w+");
 
-            // Failure to dump code is not fatal
-            if (fp) {
-                size_t unused = fwrite(code, getSize() * 4, 1, fp);
-                UNUSED(unused);
-                fclose(fp);
-            }
+        // Failure to dump code is not fatal
+        if (fp) {
+            size_t unused = fwrite(code, getSize() * 4, 1, fp);
+            UNUSED(unused);
+            fclose(fp);
         }
-#undef MAX_FNAME_LEN
     }
+#undef MAX_FNAME_LEN
+}
 
-    DNNL_DISALLOW_COPY_AND_ASSIGN(jit_generator);
+DNNL_DISALLOW_COPY_AND_ASSIGN(jit_generator);
 
 public:
-    jit_generator(void *code_ptr = nullptr, size_t code_size = MAX_CODE_SIZE,
-            bool use_autogrow = true)
-        : Xbyak::CodeGenerator(code_size, code_ptr) {}
+jit_generator(void *code_ptr = nullptr, size_t code_size = MAX_CODE_SIZE,
+        bool use_autogrow = true)
+    : Xbyak::CodeGenerator(code_size, code_ptr) {}
 #if 0
                 (code_ptr == nullptr && use_autogrow) ? Xbyak::Xbyak_aarch64::AutoGrow
                                                       : code_ptr) {}
 #endif
-    virtual ~jit_generator() {}
+virtual ~jit_generator() {}
 
-    virtual const char *name() const = 0;
-    virtual const char *source_file() const = 0;
+virtual const char *name() const = 0;
+virtual const char *source_file() const = 0;
 
-    const uint32_t *getCode32() {
-        this->ready();
-        const uint32_t *code = CGA64::getCode32();
+const uint32_t *getCode32() {
+    this->ready();
+    const uint32_t *code = CGA64::getCode32();
 
-        if (get_jit_dump()) dump_code32(code);
+    if (get_jit_dump()) dump_code32(code);
 
-        return code;
-    }
+    return code;
+}
 
-    // XXX: use normal_case name and update all callees (?)
-    const Xbyak::uint8 *getCode() {
-        const Xbyak::uint8 *code = CodeGenerator::getCode();
+// XXX: use normal_case name and update all callees (?)
+const Xbyak::uint8 *getCode() {
+    const Xbyak::uint8 *code = CodeGenerator::getCode();
 
-        if (get_jit_dump()) dump_code(code);
+    if (get_jit_dump()) dump_code(code);
 
-        return code;
-    }
+    return code;
+}
 
-    template <typename F>
-    const F getCode() {
-        return (const F)getCode32();
-    }
+template <typename F>
+const F getCode() {
+    return (const F)getCode32();
+}
 };
 
 } // namespace aarch64

@@ -235,8 +235,13 @@ struct jit_uni_i8i8_binary_kernel_t : public i8i8_binary_kernel_t,
     void forward() {
         auto dst_type = pd_->dst_md(0)->data_type;
         uni_vpxor(vreg_zero, vreg_zero, vreg_zero);
+#if 0
         init_saturate_f32(
                 vreg_zero, vreg_saturation_ubound, reg_tmp, f32, dst_type);
+#else
+        init_saturate_f32(vreg_zero, vreg_saturation_ubound,
+                xa::XReg(reg_tmp.getIdx()), f32, dst_type);
+#endif
 
         // Only mask 0 is supported at this point
         if (do_scale_src0_)

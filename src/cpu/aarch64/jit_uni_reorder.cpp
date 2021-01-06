@@ -500,8 +500,14 @@ struct jit_uni_reorder_kernel_f32 : public kernel_t, public jit_generator {
 #endif //#ifdef DNNL_X64_IMPLEMENTATION
 
         if (need_saturation) {
+#if 0
             init_saturate_f32(ymm_zero, ymm_saturation_ubound, reg_tmp,
                     interim_f32 ? f32 : prb_.itype, prb_.otype);
+#else
+            init_saturate_f32(ymm_zero, ymm_saturation_ubound,
+                    xa::XReg(reg_tmp.getIdx()), interim_f32 ? f32 : prb_.itype,
+                    prb_.otype);
+#endif
             for (int i = 0; i < unroll; i++)
                 saturate_f32(
                         Ymm(i), ymm_zero, ymm_saturation_ubound, prb_.otype);
@@ -1017,8 +1023,14 @@ struct jit_uni_reorder_kernel_f32 : public kernel_t, public jit_generator {
                     for (int ur = 0; ur < reg_unroll; ur += load_step)
                         mulps(Xmm(ur), xmm_scale);
                 if (prb_.otype != f32) {
+#if 0
                     init_saturate_f32(xmm_zero, xmm_saturation_ubound, reg_tmp,
                             interim_f32 ? f32 : prb_.itype, prb_.otype);
+#else
+                    init_saturate_f32(xmm_zero, xmm_saturation_ubound,
+                            xa::XReg(reg_tmp.getIdx()),
+                            interim_f32 ? f32 : prb_.itype, prb_.otype);
+#endif
 #ifdef DNNL_X64_IMPLEMENTATION
                     for (int ur = 0; ur < reg_unroll; ur += load_step) {
                         if (need_saturation)
@@ -1345,8 +1357,13 @@ struct jit_uni_reorder_kernel_f32 : public kernel_t, public jit_generator {
         }
 
         if (need_saturation) {
+#if 0
             init_saturate_f32(
                     xmm_zero, xmm_saturation_ubound, reg_tmp, f32, prb_.otype);
+#else
+            init_saturate_f32(xmm_zero, xmm_saturation_ubound,
+                    xa::XReg(reg_tmp.getIdx()), f32, prb_.otype);
+#endif
             for (int ur = 0; ur < reg_unroll; ur += ur_step) {
                 saturate_f32(
                         Xmm(ur), xmm_zero, xmm_saturation_ubound, prb_.otype);

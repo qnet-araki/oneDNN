@@ -76,12 +76,12 @@ struct jit_uni_subkernel_int : public jit_uni_eltwise_int_kernel,
         assert(utils::one_of(desc.alg_kind, alg_kind::eltwise_relu,
                 alg_kind::eltwise_linear));
         assert(utils::one_of(data_type(), s32, s8, u8));
-#if 0
-        assert(utils::one_of(isa, sse41, avx2, avx512_common));
-#else
         assert(utils::one_of(isa, avx512_common));
-#endif
+#if 0
         Reg64 param = abi_param1;
+#else
+        XReg param = XReg(7);
+#endif
 
         const size_t vlen = cpu_isa_traits<isa>::vlen;
         const size_t simd_w = vlen / sizeof(float);
@@ -93,124 +93,91 @@ struct jit_uni_subkernel_int : public jit_uni_eltwise_int_kernel,
         preamble();
 
 #define GET_OFF(field) offsetof(jit_args, field)
-#if 0
-        mov(reg_from, ptr[param + GET_OFF(from)]);
-        mov(reg_to, ptr[param + GET_OFF(to)]);
-        mov(reg_work_amount, ptr[param + GET_OFF(work_amount)]);
-#else
         CGA64::add_imm(X_TMP_0, XReg(IDX(param)), GET_OFF(from), X_TMP_1);
-        CGA64::ldr(XReg(IDX(reg_from)), xa::ptr(X_TMP_0));
+        CGA64::ldr(reg_from, xa::ptr(X_TMP_0));
 
         CGA64::add_imm(X_TMP_0, XReg(IDX(param)), GET_OFF(to), X_TMP_1);
-        CGA64::ldr(XReg(IDX(reg_to)), xa::ptr(X_TMP_0));
+        CGA64::ldr(reg_to, xa::ptr(X_TMP_0));
 
         CGA64::add_imm(
                 X_TMP_0, XReg(IDX(param)), GET_OFF(work_amount), X_TMP_1);
-        CGA64::ldr(XReg(IDX(reg_work_amount)), xa::ptr(X_TMP_0));
-#endif
+        CGA64::ldr(reg_work_amount, xa::ptr(X_TMP_0));
 #undef GET_OFF
 
-#if 0
-        mov(imm_addr64, float2int(desc.alpha));
-        uni_vmovq(xmm_alpha, imm_addr64);
-        uni_vbroadcastss(vmm_alpha, xmm_alpha);
-#else
         std::cout << "Debug:jit_uni_subkernel_int L" << __LINE__ << std::endl;
         CGA64::mov_imm(WReg(IDX(X_TMP_0)), float2int(desc.alpha));
-        CGA64::sxtw(XReg(IDX(imm_addr64)), WReg(IDX(X_TMP_0)));
+        CGA64::sxtw(imm_addr64, WReg(IDX(X_TMP_0)));
 
         CGA64::bic(VReg(IDX(xmm_alpha)).b16, VReg(IDX(xmm_alpha)).b16,
                 VReg(IDX(xmm_alpha)).b16);
-        CGA64::mov(VReg(IDX(xmm_alpha)).d[0], XReg(IDX(imm_addr64)));
+        CGA64::mov(VReg(IDX(xmm_alpha)).d[0], imm_addr64);
 
-        //CGA64::dup(ZRegS(IDX(vmm_alpha)), ZRegS(IDX(xmm_alpha))[0]);
         CGA64::dup(vmm_alpha, ZRegS(IDX(xmm_alpha))[0]);
-#endif
 
-#if 0
-        mov(imm_addr64, float2int(desc.beta));
-        uni_vmovq(xmm_beta, imm_addr64);
-        uni_vbroadcastss(vmm_beta, xmm_beta);
-#else
         CGA64::mov_imm(WReg(IDX(X_TMP_0)), float2int(desc.beta));
-        CGA64::sxtw(XReg(IDX(imm_addr64)), WReg(IDX(X_TMP_0)));
+        CGA64::sxtw(imm_addr64, WReg(IDX(X_TMP_0)));
 
         CGA64::bic(VReg(IDX(xmm_beta)).b16, VReg(IDX(xmm_beta)).b16,
                 VReg(IDX(xmm_beta)).b16);
-        CGA64::mov(VReg(IDX(xmm_beta)).d[0], XReg(IDX(imm_addr64)));
+        CGA64::mov(VReg(IDX(xmm_beta)).d[0], imm_addr64);
 
         //CGA64::dup(ZRegS(IDX(vmm_beta)), ZRegS(IDX(xmm_beta))[0]);
         CGA64::dup(vmm_beta, ZRegS(IDX(xmm_beta))[0]);
-#endif
 
-#if 0
-        uni_vpxor(vmm_zero, vmm_zero, vmm_zero);
-        xor_(reg_int8, reg_int8);
-#else
         CGA64::eor(ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)),
                 ZRegD(IDX(vmm_zero)));
+#if 0
         CGA64::eor(
                 XReg(IDX(reg_int8)), XReg(IDX(reg_int8)), XReg(IDX(reg_int8)));
-#endif
-        if (isa == avx512_common) {
-#if 0
-            mov(reg_int8.cvt8(), 0x01);
-            kmovw(k_mask_int8, reg_int8.cvt32());
 #else
+        CGA64::eor(reg_int8, reg_int8, reg_int8);
+#endif
+
+        if (isa == avx512_common) {
             std::cout << "Debug:jit_uni_subkernel_int L" << __LINE__
                       << std::endl;
+#if 0
             CGA64::and_(X_TMP_1, XReg(IDX(reg_int8)), ~uint64_t(0xff));
+#else
+            CGA64::and_(X_TMP_1, reg_int8, ~uint64_t(0xff));
+#endif
             CGA64::mov(W_TMP_0, 0x01);
+#if 0
             CGA64::orr(XReg(IDX(reg_int8)), X_TMP_0, X_TMP_1);
-
-            CGA64::mov(PRegB(IDX(k_mask_int8)), P_ALL_ONE.b);
+#else
+            CGA64::orr(reg_int8, X_TMP_0, X_TMP_1);
+#endif
+            CGA64::mov(PRegB(IDX(p_mask_int8)), P_ALL_ONE.b);
             CGA64::index(ZRegS(IDX(z_tmp)), 0, 1);
             CGA64::mov(ZRegS(IDX(z_tmp0)), 1);
-            CGA64::lsl(ZRegS(IDX(z_tmp0)), PReg(IDX(k_mask_int8)) / T_m,
-                    ZRegS(IDX(z_tmp)));
+            CGA64::lsl(
+                    ZRegS(IDX(z_tmp0)), p_mask_int8 / T_m, ZRegS(IDX(z_tmp)));
             CGA64::dup(ZRegS(IDX(z_tmp)), WReg(IDX(reg_int8)));
             CGA64::and_(
                     ZRegD(IDX(z_tmp)), ZRegD(IDX(z_tmp)), ZRegD(IDX(z_tmp0)));
-            CGA64::cmpne(PRegS(IDX(k_mask_int8)), PReg(IDX(k_mask_int8)),
-                    ZRegS(IDX(z_tmp)), 0);
-#endif
+            CGA64::cmpne(
+                    PRegS(IDX(p_mask_int8)), p_mask_int8, ZRegS(IDX(z_tmp)), 0);
         }
 
-        Label loop_label[3];
+        xa::LabelAArch64 loop_label[3];
 
         for (int id = 0; id < 2; id++) {
-            L(loop_label[id]);
-#if 0
-            cmp(reg_work_amount, uf[id] * loop_dec[id] - 1);
-#else
+            CGA64::L_aarch64(loop_label[id]);
             CGA64::mov_imm(X_TMP_0, uf[id] * loop_dec[id] - 1);
-            CGA64::cmp(XReg(IDX(reg_work_amount)), X_TMP_0);
-#endif
-#if 0
-            jle(loop_label[id + 1], T_NEAR);
-#else
+            CGA64::cmp(reg_work_amount, X_TMP_0);
+
             CGA64::b(LE, loop_label[id + 1]);
-#endif
 
             compute_step(loop_vectorize[id], uf[id], shift[id], desc.alg_kind);
 
-#if 0
-            add(reg_from, uf[id] * shift[id]);
-            add(reg_to, uf[id] * shift[id]);
-            sub(reg_work_amount, uf[id] * loop_dec[id]);
-            jmp(loop_label[id]);
-#else
-            CGA64::add_imm(XReg(IDX(reg_from)), XReg(IDX(reg_from)),
-                    uf[id] * shift[id], X_TMP_0);
-            CGA64::add_imm(XReg(IDX(reg_to)), XReg(IDX(reg_to)),
-                    uf[id] * shift[id], X_TMP_0);
-            CGA64::sub_imm(XReg(IDX(reg_work_amount)),
-                    XReg(IDX(reg_work_amount)), uf[id] * loop_dec[id], X_TMP_0);
+            CGA64::add_imm(reg_from, reg_from, uf[id] * shift[id], X_TMP_0);
+            CGA64::add_imm(reg_to, reg_to, uf[id] * shift[id], X_TMP_0);
+            CGA64::sub_imm(reg_work_amount, reg_work_amount,
+                    uf[id] * loop_dec[id], X_TMP_0);
             CGA64::b(loop_label[id]);
-#endif
         }
 
-        L(loop_label[2]);
+        CGA64::L_aarch64(loop_label[2]);
         postamble();
 
         ker_ = (decltype(ker_))this->getCode();
@@ -218,13 +185,16 @@ struct jit_uni_subkernel_int : public jit_uni_eltwise_int_kernel,
 
 private:
     using Vmm = typename cpu_isa_traits<isa>::Vmm;
-    using opmask_t = const Xbyak::Opmask;
 
     XReg reg_from = XReg(0);
     XReg reg_to = XReg(8);
-    Reg64 reg_work_amount = rsi; //x6
-    Reg64 imm_addr64 = rbx; //x3
+    XReg reg_work_amount = XReg(6);
+    XReg imm_addr64 = XReg(3);
+#if 0
     Reg64 reg_int8 = r9;
+#else
+    XReg reg_int8 = XReg(9);
+#endif
 
     ZReg z_tmp {31};
     ZReg z_tmp0 {30};
@@ -234,14 +204,14 @@ private:
     XReg xmm_alpha = XReg(13);
     XReg xmm_beta = XReg(14);
 
-    Vmm vmm_tmp = Vmm(isa == avx512_common ? 26 : 11);
+    Vmm vmm_tmp = Vmm(26);
     ZRegS vmm_alpha = ZRegS(27);
     ZRegS vmm_beta = ZRegS(28);
     Vmm vmm_zero = Vmm(29);
     //    Vmm vmm_mask = Vmm(isa == avx512_common ? 30 : 12);
 
-    opmask_t k_mask = k1;
-    opmask_t k_mask_int8 = k2; // Mask for store 1 byte in case of AVX512
+    PReg p_mask = PReg(1);
+    PReg p_mask_int8 = PReg(2); // Mask for store 1 byte in case of AVX512
 
     bool is32bit() const { return data_type() == data_type::s32; }
 
@@ -258,11 +228,9 @@ private:
             std::cout << "Debug:load_32bit L" << __LINE__ << std::endl;
             CGA64::ptrue(PRegS(IDX(p_tmp)), VL4);
             CGA64::ldr(W_TMP_0, xa::ptr(mem_from));
-            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))),
-                    PReg(IDX(p_tmp)) / T_m, 0);
+            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))), p_tmp / T_m, 0);
             CGA64::ptrue(PRegS(IDX(p_tmp)), VL1);
-            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))),
-                    PReg(IDX(p_tmp)) / T_m, W_TMP_0);
+            CGA64::mov(ZRegS(IDX(Xmm(vr_from.getIdx()))), p_tmp / T_m, W_TMP_0);
         }
     }
 
@@ -281,8 +249,8 @@ private:
                 CGA64::zip1(ZReg(IDX(z_tmp)).h, ZReg(IDX(z_tmp)).h,
                         ZReg(IDX(z_tmp)).h);
                 CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
-                CGA64::sxtb(ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m,
-                        ZReg(IDX(z_tmp)).s);
+                CGA64::sxtb(
+                        ZRegS(IDX(vr_from)), p_tmp / T_m, ZRegS(IDX(z_tmp)));
             } else {
                 std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
                 CGA64::ldr(QReg(IDX(z_tmp)), xa::ptr(mem_from));
@@ -291,32 +259,50 @@ private:
                 CGA64::zip1(ZReg(IDX(z_tmp)).h, ZReg(IDX(z_tmp)).h,
                         ZReg(IDX(z_tmp)).h);
                 CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
-                CGA64::uxtb(ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m,
-                        ZReg(IDX(z_tmp)).s);
+                CGA64::uxtb(
+                        ZRegS(IDX(vr_from)), p_tmp / T_m, ZRegS(IDX(z_tmp)));
             }
         } else {
             // load exactly one data item
             std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
             CGA64::ldurb(W_TMP_0, xa::ptr(mem_from));
+
+#if 0
             CGA64::and_(X_TMP_1, XReg(IDX(reg_int8.cvt8())), ~uint64_t(0xff));
             CGA64::orr(XReg(IDX(reg_int8.cvt8())), X_TMP_0, X_TMP_1);
+#else
+            CGA64::and_(X_TMP_1, reg_int8, ~uint64_t(0xff));
+            CGA64::orr(reg_int8, X_TMP_0, X_TMP_1);
+#endif
 
             if (is_signed) {
                 std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+#if 0
                 CGA64::sxtb(WReg(IDX(reg_int8.cvt32())),
                         WReg(IDX(reg_int8.cvt8())));
+#else
+                CGA64::sxtb(WReg(IDX(reg_int8)), WReg(IDX(reg_int8)));
+#endif
             } else {
                 std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
+#if 0
                 CGA64::uxtb(WReg(IDX(reg_int8.cvt32())),
                         WReg(IDX(reg_int8.cvt8())));
+#else
+                CGA64::uxtb(WReg(IDX(reg_int8)), WReg(IDX(reg_int8)));
+#endif
             }
 
             std::cout << "Debug:load_8bit L" << __LINE__ << std::endl;
             CGA64::bic(VReg(IDX(Xmm(vr_from.getIdx()))).b16,
                     VReg(IDX(Xmm(vr_from.getIdx()))).b16,
                     VReg(IDX(Xmm(vr_from.getIdx()))).b16);
+#if 0
             CGA64::mov(
                     VReg(IDX(Xmm(vr_from.getIdx()))).d[0], XReg(IDX(reg_int8)));
+#else
+            CGA64::mov(VReg(IDX(Xmm(vr_from.getIdx()))).d[0], reg_int8);
+#endif
         }
     }
 
@@ -346,8 +332,8 @@ private:
             // store exactly one data item
             std::cout << "Debug:store_32bit L" << __LINE__ << std::endl;
             CGA64::ptrue(PRegS(IDX(p_tmp)), VL1);
-            CGA64::st1w(ZRegS(IDX(Xmm(vr_to.getIdx()))), PReg(IDX(p_tmp)),
-                    xa::ptr(mem_to));
+            CGA64::st1w(
+                    ZRegS(IDX(Xmm(vr_to.getIdx()))), p_tmp, xa::ptr(mem_to));
         }
     }
 
@@ -404,21 +390,24 @@ void jit_uni_subkernel_int<isa>::process_linear(
     std::cout << "Debug:process_linear L" << __LINE__ << std::endl;
 
     CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
-    CGA64::scvtf(
-            ZReg(IDX(vr_to)).s, PReg(IDX(p_tmp)) / T_m, ZReg(IDX(vr_from)).s);
+    CGA64::scvtf(ZRegS(IDX(vr_to)), p_tmp / T_m, ZRegS(IDX(vr_from)));
 
     // ###Manually merge code generated by the indirect method
     CGA64::sub_imm(XReg(22), XReg(22), 0x08, X_TMP_0);
     CGA64::str(PReg(7), xa::ptr(XReg(22)));
     CGA64::mov(PReg(7).b, PReg(15).b);
-    //CGA64::fmad(ZReg(2).s,PReg(7)/T_m,ZReg(27).s,ZReg(28).s);
-    CGA64::fmad(ZReg(2).s, PReg(7) / T_m, vmm_alpha, vmm_beta);
+    CGA64::fmad(ZRegS(2), PReg(7) / T_m, vmm_alpha, vmm_beta);
     CGA64::ldr(PReg(7), xa::ptr(XReg(22)));
     CGA64::add_imm(XReg(22), XReg(22), 0x08, X_TMP_0);
 
     // Saturate before converting from f32 to s32
     Vmm vmm_saturation_ubound = vmm_tmp;
+#if 0
     Reg64 reg_tmp = r10;
+#else
+    XReg reg_tmp = XReg(10);
+#endif
+
     CGA64::eor(
             ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)), ZRegD(IDX(vmm_zero)));
     init_saturate_f32(vmm_zero, vmm_saturation_ubound, reg_tmp, data_type::f32,
@@ -426,8 +415,8 @@ void jit_uni_subkernel_int<isa>::process_linear(
     saturate_f32(vr_to, vmm_zero, vmm_saturation_ubound, data_type());
 
     CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
-    CGA64::frinti(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
-    CGA64::fcvtzs(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+    CGA64::frinti(ZRegS(IDX(vr_to)), p_tmp / T_m, ZRegS(IDX(vr_to)));
+    CGA64::fcvtzs(ZRegS(IDX(vr_to)), p_tmp / T_m, ZRegS(IDX(vr_to)));
 }
 
 template <cpu_isa_t isa>
@@ -470,21 +459,20 @@ void jit_uni_subkernel_int<avx512_common>::process_relu(
 
     std::cout << "Debug:process_relu L" << __LINE__ << std::endl;
     CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
-    CGA64::scvtf(
-            ZReg(IDX(vr_from)).s, PReg(IDX(p_tmp)) / T_m, ZReg(IDX(vr_from)).s);
+    CGA64::scvtf(ZRegS(IDX(vr_from)), p_tmp / T_m, ZRegS(IDX(vr_from)));
 
-    CGA64::fmul(ZReg(IDX(vr_to)).s, ZReg(IDX(vr_from)).s, vmm_alpha);
+    CGA64::fmul(ZRegS(IDX(vr_to)), ZRegS(IDX(vr_from)), vmm_alpha);
 
     CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
-    CGA64::fcmgt(PRegS(IDX(k_mask)), PReg(IDX(p_tmp)) / xa::T_z,
-            ZRegS(IDX(vr_from)), ZRegS(IDX(vmm_zero)));
+    CGA64::fcmgt(PRegS(IDX(p_mask)), p_tmp / xa::T_z, ZRegS(IDX(vr_from)),
+            ZRegS(IDX(vmm_zero)));
 
-    CGA64::sel(ZRegS(IDX(vr_to)), PReg(IDX(k_mask)) / T_m, ZRegS(IDX(vr_from)),
+    CGA64::sel(ZRegS(IDX(vr_to)), p_mask / T_m, ZRegS(IDX(vr_from)),
             ZRegS(IDX(vr_to)));
 
     CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE / xa::T_z, P_ALL_ONE.b);
-    CGA64::frinti(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
-    CGA64::fcvtzs(ZRegS(IDX(vr_to)), PReg(IDX(p_tmp)) / T_m, ZRegS(IDX(vr_to)));
+    CGA64::frinti(ZRegS(IDX(vr_to)), p_tmp / T_m, ZRegS(IDX(vr_to)));
+    CGA64::fcvtzs(ZRegS(IDX(vr_to)), p_tmp / T_m, ZRegS(IDX(vr_to)));
 }
 
 template <cpu_isa_t isa>
@@ -562,13 +550,13 @@ void jit_uni_subkernel_int<avx512_common>::store_8bit(const bool vectorize,
             CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
             CGA64::smin(ZRegS(IDX(z_tmp)), 127);
             CGA64::smax(ZRegS(IDX(z_tmp)), -128);
-            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)), xa::ptr(mem_to));
+            CGA64::st1b(ZRegS(IDX(z_tmp)), p_tmp, xa::ptr(mem_to));
         } else {
             std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
             CGA64::mov(PRegB(IDX(p_tmp)), P_ALL_ONE.b);
             CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
             CGA64::umin(ZRegS(IDX(z_tmp)), 255);
-            CGA64::st1b(ZRegS(IDX(z_tmp)), PReg(IDX(p_tmp)), xa::ptr(mem_to));
+            CGA64::st1b(ZRegS(IDX(z_tmp)), p_tmp, xa::ptr(mem_to));
         }
     } else {
         // store exactly one data item
@@ -578,14 +566,12 @@ void jit_uni_subkernel_int<avx512_common>::store_8bit(const bool vectorize,
             CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
             CGA64::smin(ZRegS(IDX(z_tmp)), 127);
             CGA64::smax(ZRegS(IDX(z_tmp)), -128);
-            CGA64::st1b(
-                    ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)), xa::ptr(mem_to));
+            CGA64::st1b(ZRegS(IDX(z_tmp)), p_mask_int8, xa::ptr(mem_to));
         } else {
             std::cout << "Debug:store_8bit L" << __LINE__ << std::endl;
             CGA64::mov(ZRegD(IDX(z_tmp)), ZRegD(IDX(vr_to)));
             CGA64::umin(ZRegS(IDX(z_tmp)), 255);
-            CGA64::st1b(
-                    ZRegS(IDX(z_tmp)), PReg(IDX(k_mask_int8)), xa::ptr(mem_to));
+            CGA64::st1b(ZRegS(IDX(z_tmp)), p_mask_int8, xa::ptr(mem_to));
         }
     }
 }
