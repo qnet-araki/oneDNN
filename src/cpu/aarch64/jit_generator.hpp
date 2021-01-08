@@ -385,33 +385,26 @@ public:
     void uni_vpxor(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op) {
         if (mayiuse(avx512_core)) {
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxord(x1, x2, op);
         } else if (mayiuse(avx)) {
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxor(x1, x2, op);
         } else {
             assert(x1.isEqualIfNotInherited(x2));
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             pxor(x2, op);
         }
     }
     void uni_vpxor(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op) {
         if (mayiuse(avx512_core)) {
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxord(x1, x2, op);
         } else if (mayiuse(avx2)) {
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vpxor(x1, x2, op);
         } else {
-            std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
             vxorps(x1, x2, op);
         }
     }
     void uni_vpxor(const Xbyak::Zmm &x1, const Xbyak::Zmm &x2,
             const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vpxor L" << __LINE__ << std::endl;
         vpxord(x1, x2, op);
     }
 
@@ -465,20 +458,16 @@ public:
     }
 
     void uni_vmovups(const Xbyak::Address &addr, const Xbyak::Xmm &x) {
-        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         movups(addr, x);
     }
     void uni_vmovups(const Xbyak::Address &addr, const Xbyak::Ymm &x) {
-        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         vmovups(addr, x);
     }
 
     void uni_vmovups(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         movups(x, op);
     }
     void uni_vmovups(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vmovups L" << __LINE__ << std::endl;
         vmovups(x, op);
     }
 
@@ -508,19 +497,14 @@ public:
     }
 
     void uni_vbroadcastss(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
         movss(x, op);
         shufps(x, x, 0x0);
     }
     void uni_vbroadcastss(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
         if (op.isMEM() || mayiuse(avx2)) {
-            std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
             vbroadcastss(x, op);
         } else {
             Xbyak::Xmm t(x.getIdx());
-            std::cout << "Debug:uni_vbroadcastss L" << __LINE__ << std::endl;
-            std::cout << "Debug:t.isEqualIfNotInherited(op) = "
-                      << t.isEqualIfNotInherited(op) << std::endl;
             if (!t.isEqualIfNotInherited(op)) movss(t, op);
             vinsertf128(x, x, t, 1);
             vshufps(x, x, x, 0);
@@ -697,13 +681,11 @@ public:
         // Note: x1 gets overriden by x1*x2
         // This is incorrect if x1 == op
         assert(!x1.isEqualIfNotInherited(op));
-        std::cout << "Debug:uni_vfmadd213ps L" << __LINE__ << std::endl;
         mulps(x1, x2);
         addps(x1, op);
     }
     void uni_vfmadd213ps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vfmadd213ps L" << __LINE__ << std::endl;
         vfmadd213ps(x1, x2, op);
     }
 
@@ -901,12 +883,10 @@ public:
     }
 
     void uni_vpmovsxbd(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vpmovsxbd L" << __LINE__ << std::endl;
         pmovsxbd(x, op);
     }
 
     void uni_vpmovsxbd(const Xbyak::Ymm &y, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vpmovsxbd L" << __LINE__ << std::endl;
         vpmovsxbd(y, op);
     }
 
@@ -962,20 +942,16 @@ public:
     }
 
     void uni_vcvtps2dq(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vcvtps2dq L" << __LINE__ << std::endl;
         cvtps2dq(x, op);
     }
     void uni_vcvtps2dq(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vcvtps2dq L" << __LINE__ << std::endl;
         vcvtps2dq(x, op);
     }
 
     void uni_vcvtdq2ps(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vcvtdq2ps L" << __LINE__ << std::endl;
         cvtdq2ps(x, op);
     }
     void uni_vcvtdq2ps(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
-        std::cout << "Debug:uni_vcvtdq2ps L" << __LINE__ << std::endl;
         vcvtdq2ps(x, op);
     }
 
@@ -988,19 +964,15 @@ public:
 
     void uni_vmovq(const Xbyak::Xmm &x, const Xbyak::Reg64 &r) {
         if (mayiuse(avx)) {
-            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             vmovq(x, r);
         } else {
-            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             movq(x, r);
         }
     }
     void uni_vmovq(const Xbyak::Address &addr, const Xbyak::Xmm &x) {
         if (mayiuse(avx)) {
-            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             vmovq(addr, x);
         } else {
-            std::cout << "Debug:uni_vmovq L" << __LINE__ << std::endl;
             movq(addr, x);
         }
     }
