@@ -1,7 +1,6 @@
 /*******************************************************************************
-* Copyright 2020 Intel Corporation
+* Copyright 2017 - 2020 Intel Corporation *
 * Copyright 2020-2021 FUJITSU LIMITED
-*
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -17,7 +16,8 @@
 
 #include <functional>
 #include <new>
-#include "dnnl_types.h"
+
+#include "oneapi/dnnl/dnnl_types.h"
 
 #include "common/c_types_map.hpp"
 #include "common/dnnl_thread.hpp"
@@ -550,6 +550,8 @@ void jit_uni_pooling_fwd_t<isa, d_type>::execute_forward(const data_t *src,
     const auto ind_dt_size
             = indices ? types::data_type_size(indices_d.data_type()) : 0;
     const auto &jpp = pd()->jpp_;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jpp.post_ops, ctx);
 
     using wsp_data_t = typename prec_traits<wsp_dt_>::type;
     using namespace jit_uni_pooling_utils;
@@ -606,6 +608,7 @@ void jit_uni_pooling_fwd_t<isa, d_type>::execute_forward(const data_t *src,
                 - nstl::max(0, jpp.t_pad - oh * jpp.stride_h));
         arg.ur_bc = ur_bc;
         arg.b_c = b_c;
+        arg.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
         arg.c_elem_off = c_elem_off;
         (*kernel_)(&arg);
     };
@@ -665,6 +668,8 @@ void jit_uni_pooling_fwd_t<isa, d_type>::execute_forward_3d(const data_t *src,
     const memory_desc_wrapper indices_d(pd()->workspace_md());
     const size_t ind_dt_size
             = indices ? types::data_type_size(indices_d.data_type()) : 0;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jpp.post_ops, ctx);
 
     using wsp_data_t = typename prec_traits<wsp_dt_>::type;
     using namespace jit_uni_pooling_utils;
@@ -730,6 +735,7 @@ void jit_uni_pooling_fwd_t<isa, d_type>::execute_forward_3d(const data_t *src,
 
         arg.ur_bc = ur_bc;
         arg.b_c = b_c;
+        arg.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
         arg.c_elem_off = jpp.c_block * b_c;
         (*kernel_)(&arg);
     };
@@ -1216,7 +1222,12 @@ void jit_uni_pooling_bwd_t<isa, d_type>::execute_backward_3d(
         }
     }
 }
-
+//template struct jit_uni_pooling_fwd_t<asimd, data_type::f32>;
+//template struct jit_uni_pooling_bwd_t<asimd, data_type::f32>;
+//template struct jit_uni_pooling_fwd_t<sve_128, data_type::f32>;
+//template struct jit_uni_pooling_bwd_t<sve_128, data_type::f32>;
+//template struct jit_uni_pooling_fwd_t<sve_256, data_type::f32>;
+//template struct jit_uni_pooling_bwd_t<sve_256, data_type::f32>;
 template struct jit_uni_pooling_fwd_t<sve_512, data_type::f32>;
 template struct jit_uni_pooling_bwd_t<sve_512, data_type::f32>;
 
