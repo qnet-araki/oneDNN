@@ -85,7 +85,7 @@ struct jit_uni_i8i8_pooling_fwd_t : public primitive_t {
     }
 
 private:
-    void execute_forward(const exec_ctx_t &ctx) const;
+    status_t execute_forward(const exec_ctx_t &ctx) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_uni_i8i8_pooling_fwd_ker_t<isa>> ker_;
