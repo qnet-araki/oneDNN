@@ -328,15 +328,13 @@ static inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
         case avx512_core_vnni:
         case avx512_mic:
         case avx512_mic_4ops:
-        case avx512_core_bf16:
-	  return true;
+        case avx512_core_bf16: return true;
         case amx_tile:
         case amx_int8:
         case amx_bf16:
         case avx512_core_bf16_amx_int8:
         case avx512_core_bf16_amx_bf16:
-        case avx512_core_amx:
-	  return false;
+        case avx512_core_amx: return false;
         case isa_any: return true;
         case isa_all: return false;
     }

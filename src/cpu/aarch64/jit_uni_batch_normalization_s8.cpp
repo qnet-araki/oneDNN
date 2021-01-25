@@ -258,7 +258,8 @@ struct jit_bnorm_t<sve_512> : public jit_bnorm_base_t<sve_512> {
             case 1: ptrue(PRegS(idx), VL1); break;
             default:
                 index(z_tmp0.s, 1, 1);
-                cmple(PRegS(idx), p_512 / Xbyak_aarch64::T_z, z_tmp0.s, c_tail_);
+                cmple(PRegS(idx), p_512 / Xbyak_aarch64::T_z, z_tmp0.s,
+                        c_tail_);
                 break;
         }
     }
@@ -266,8 +267,10 @@ struct jit_bnorm_t<sve_512> : public jit_bnorm_base_t<sve_512> {
     void load_mean_and_var(const ZReg &vmean, const ZReg &vsqrtvar, size_t offt,
             bool need_tail) override {
         if (need_tail) {
-            ld1w(vmean.s, tail_opmask / Xbyak_aarch64::T_z, Xbyak_aarch64::ptr(mean_ptr(offt)));
-            ld1w(vsqrtvar.s, tail_opmask / Xbyak_aarch64::T_z, Xbyak_aarch64::ptr(var_ptr(offt)));
+            ld1w(vmean.s, tail_opmask / Xbyak_aarch64::T_z,
+                    Xbyak_aarch64::ptr(mean_ptr(offt)));
+            ld1w(vsqrtvar.s, tail_opmask / Xbyak_aarch64::T_z,
+                    Xbyak_aarch64::ptr(var_ptr(offt)));
         } else {
             ldr(vmean, Xbyak_aarch64::ptr(mean_ptr(offt)));
             ldr(vsqrtvar, Xbyak_aarch64::ptr(var_ptr(offt)));
@@ -277,8 +280,10 @@ struct jit_bnorm_t<sve_512> : public jit_bnorm_base_t<sve_512> {
     void load_scale_and_shift(const ZReg &vscale, const ZReg &vshift,
             size_t offt, bool need_tail) override {
         if (need_tail) {
-            ld1w(vscale.s, tail_opmask / Xbyak_aarch64::T_z, Xbyak_aarch64::ptr(scale_ptr(offt)));
-            ld1w(vshift.s, tail_opmask / Xbyak_aarch64::T_z, Xbyak_aarch64::ptr(shift_ptr(offt)));
+            ld1w(vscale.s, tail_opmask / Xbyak_aarch64::T_z,
+                    Xbyak_aarch64::ptr(scale_ptr(offt)));
+            ld1w(vshift.s, tail_opmask / Xbyak_aarch64::T_z,
+                    Xbyak_aarch64::ptr(shift_ptr(offt)));
         } else {
             ldr(vscale, Xbyak_aarch64::ptr(scale_ptr(offt)));
             ldr(vshift, Xbyak_aarch64::ptr(shift_ptr(offt)));
@@ -313,13 +318,15 @@ struct jit_bnorm_t<sve_512> : public jit_bnorm_base_t<sve_512> {
                             ptrue(P_TMP_1.b, VL8);
                             zip1(p_tmp0.d, P_TMP_1.d, p_tmp0.d);
                         }
-                        ld1b(v.b, p_tmp0 / Xbyak_aarch64::T_m, Xbyak_aarch64::ptr(src_ptr()));
+                        ld1b(v.b, p_tmp0 / Xbyak_aarch64::T_m,
+                                Xbyak_aarch64::ptr(src_ptr()));
                     }
                     zip1(z_tmp0.b, v.b, v.b);
                     zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
                     sxtb(v.s, p_512 / Xbyak_aarch64::T_m, z_tmp0.s);
                 } else {
-                    ld1b(z_tmp0.b, p_lsb_128 / Xbyak_aarch64::T_z, Xbyak_aarch64::ptr(src_ptr()));
+                    ld1b(z_tmp0.b, p_lsb_128 / Xbyak_aarch64::T_z,
+                            Xbyak_aarch64::ptr(src_ptr()));
                     zip1(z_tmp0.b, z_tmp0.b, z_tmp0.b);
                     zip1(z_tmp0.h, z_tmp0.h, z_tmp0.h);
                     sxtb(v.s, p_512 / Xbyak_aarch64::T_m, z_tmp0.s);
@@ -341,13 +348,15 @@ struct jit_bnorm_t<sve_512> : public jit_bnorm_base_t<sve_512> {
                     uzp1(v.b, z_tmp0.b, v.b);
 
                     if (c_tail_ != 0) {
-                        st1b(v.b, p_tmp0 / Xbyak_aarch64::T_m, Xbyak_aarch64::ptr(dst_ptr()));
+                        st1b(v.b, p_tmp0 / Xbyak_aarch64::T_m,
+                                Xbyak_aarch64::ptr(dst_ptr()));
                     }
                 } else {
                     xa_->mov(z_tmp0.d, v.d);
                     smin(z_tmp0.s, 127);
                     smax(z_tmp0.s, -128);
-                    st1b(z_tmp0.s, p_512 / Xbyak_aarch64::T_m, Xbyak_aarch64::ptr(dst_ptr()));
+                    st1b(z_tmp0.s, p_512 / Xbyak_aarch64::T_m,
+                            Xbyak_aarch64::ptr(dst_ptr()));
                 }
 
                 xa_->add(reg_spat_offt, reg_spat_offt, reg_channel_offt_count);

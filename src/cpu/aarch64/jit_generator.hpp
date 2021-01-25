@@ -260,7 +260,8 @@ public:
         if (dstIdx == src2Idx) {
             assert(tmpIdx != srcIdx && tmpIdx != src2Idx);
 
-            xa_->mov(Xbyak_aarch64::ZRegD(tmpIdx), Xbyak_aarch64::ZRegD(src2Idx));
+            xa_->mov(Xbyak_aarch64::ZRegD(tmpIdx),
+                    Xbyak_aarch64::ZRegD(src2Idx));
             xa_->mov(dst, pred / Xbyak_aarch64::T_m, src);
             xa_->fdiv(dst, pred / Xbyak_aarch64::T_m, tmp);
         } else if (dstIdx == srcIdx) {
