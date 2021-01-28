@@ -372,7 +372,7 @@ int fill_wei(
     const bool wei_x8x8
             = prb->cfg[WEI].dt == dnnl_s8 && prb->cfg[SRC].dt == dt_check;
     const bool check_reorder = (bench_mode & CORR) && diff_data_type && !wino_s8
-	      && !wei_x8x8 && is_def_zp;
+            && !wei_x8x8 && is_def_zp;
 
     dnn_mem_t extra_mem;
     if (check_reorder) {
