@@ -53,7 +53,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::bcast_loop(int load_loop_blk) {
     Label bcast_loop;
     Label bcast_loop_tail;
 
-    xa_->cmp(bcast_loop_iter, jcp.ur);
+    xa_->cmp_imm(bcast_loop_iter, jcp.ur, reg_tmp0_imm);
     b(LT, bcast_loop_tail);
 
     L(bcast_loop);
@@ -82,14 +82,14 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::bcast_loop(int load_loop_blk) {
             }
         }
         subs(bcast_loop_iter, bcast_loop_iter, jcp.bcast_block);
-        xa_->cmp(bcast_loop_iter, jcp.bcast_block);
+        xa_->cmp_imm(bcast_loop_iter, jcp.bcast_block, reg_tmp0_imm);
         b(GE, bcast_loop);
     }
 
     L(bcast_loop_tail);
     if (jcp.ur_tail) {
         Label bcast_loop_tail_out;
-        xa_->cmp(bcast_loop_iter, 0);
+        xa_->cmp_imm(bcast_loop_iter, 0, reg_tmp0_imm);
         b(EQ, bcast_loop_tail_out);
         reduce_loop(load_loop_blk, jcp.ur_tail, 0, true);
         L(bcast_loop_tail_out);
@@ -709,7 +709,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
         /*Check if it is the last load_loop_blk*/
         subs(reg_load_loop_work, reg_load_loop_work,
                 load_loop_blk * jcp.load_loop_iter_step);
-        xa_->cmp(reg_load_loop_work, 0);
+        xa_->cmp_imm(reg_load_loop_work, 0, reg_tmp0_imm);
         b(GT, common_store);
 
         /*Check if it is the last ocb*/
@@ -734,7 +734,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
 template <typename Vmm>
 void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
 
-    preamble();
+    preamble(true);
     const int simd_w = jcp.ic_block;
 
     ptrue(PRegB(vmask.getIdx()));
@@ -746,7 +746,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
     // vpbroadcastw(vmm_one, _t);
     dup(vmm_one.h, 0x1);
 
-    xa_->mov(reg_rsp, XReg(sp.getIdx()));
+    xa_->mov(reg_rsp, xa_->sp);
     subs(reg_rsp, reg_rsp, stack_space_needed);
 
     if (jcp.oc_without_padding != jcp.oc) {
@@ -852,7 +852,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
     for (int ur_idx = num_ur_cases - 1; ur_idx > 0; ur_idx--) {
         int label_idx = num_ur_cases - ur_idx - 1;
         if (jcp.ur <= ur_cases[ur_idx]) {
-            xa_->cmp(reg_load_loop_work, simd_w * (label_idx + 1));
+            xa_->cmp_imm(reg_load_loop_work, simd_w * (label_idx + 1), reg_tmp0_imm);
             b(LE, load_loop_blk[label_idx]);
         }
     }
@@ -863,7 +863,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
             L(load_loop_blk[label_idx]);
             {
                 if (label_idx == 0) {
-                    xa_->cmp(reg_load_loop_work, 0);
+                    xa_->cmp_imm(reg_load_loop_work, 0, reg_tmp0_imm);
                     b(EQ, load_loop_blk[num_ur_cases]);
                 }
 
@@ -880,18 +880,18 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
 
                 load_loop_body(label_idx + 1);
                 if (label_idx - 1 > 0) {
-                    xa_->cmp(reg_load_loop_work, 2 * label_idx * simd_w);
+                    xa_->cmp_imm(reg_load_loop_work, 2 * label_idx * simd_w, reg_tmp0_imm);
                     b(EQ, load_loop_blk[label_idx - 1]);
                 }
-                xa_->cmp(reg_load_loop_work, (label_idx + 1) * simd_w);
+                xa_->cmp_imm(reg_load_loop_work, (label_idx + 1) * simd_w, reg_tmp0_imm);
                 b(GE, load_loop_blk[label_idx]);
             }
             for (int idx = label_idx - 1; idx > 0; --idx) {
-                xa_->cmp(reg_load_loop_work, simd_w * (idx + 1));
+                xa_->cmp_imm(reg_load_loop_work, simd_w * (idx + 1), reg_tmp0_imm);
                 b(EQ, load_loop_blk[idx]);
             }
             if (ur_idx < num_ur_cases - 2) {
-                xa_->cmp(reg_load_loop_work, simd_w);
+                xa_->cmp_imm(reg_load_loop_work, simd_w, reg_tmp0_imm);
                 b(LE, load_loop_blk[0]);
             }
         }

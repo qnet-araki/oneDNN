@@ -662,7 +662,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
             //TODO: May be avoided when f_pad=0 and dd0
             //TODO: Potential optimization by precomputing, when kd <<< od?
             ldr(reg_ki, Xbyak_aarch64::ptr(reg_param1, GET_OFF(f_overflow)));
-            xa_->cmp(reg_ki, 0);
+            xa_->cmp_imm(reg_ki, 0, reg_tmp0_imm);
             b(EQ, no_f_overflow_label);
             L(f_overflow_label);
             {
@@ -689,7 +689,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
                 || (jcp.signed_input
                         && (jcp.kd - 1) * (jcp.dilate_d + 1)
                                 < nstl::max(jcp.f_pad, jcp.back_pad))) {
-            xa_->cmp(reg_ki, 0);
+            xa_->cmp_imm(reg_ki, 0, reg_tmp0_imm);
             b(EQ, skip_kd_loop);
         }
         L(kd_label);
@@ -706,7 +706,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
 
     if (!jcp.signed_input && jcp.ndims > 3) {
         ldr(reg_overflow, Xbyak_aarch64::ptr(reg_param1, GET_OFF(t_overflow)));
-        xa_->cmp(reg_overflow, 0);
+        xa_->cmp_imm(reg_overflow, 0, reg_tmp0_imm);
         b(EQ, no_t_overflow_label);
         L(t_overflow_label);
         {
@@ -714,7 +714,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
 
             adds_imm(aux_reg_ker, aux_reg_ker, shift_kernel_ptr, reg_tmp0_imm);
             subs(reg_overflow, reg_overflow, 1);
-            xa_->cmp(reg_overflow, 0);
+            xa_->cmp_imm(reg_overflow, 0, reg_tmp0_imm);
             b(GT, t_overflow_label);
         }
         L(no_t_overflow_label);
@@ -724,7 +724,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
             || (jcp.signed_input
                     && (jcp.kh - 1) * (jcp.dilate_h + 1)
                             < nstl::max(jcp.t_pad, jcp.b_pad))) {
-        xa_->cmp(reg_kj, 0);
+        xa_->cmp_imm(reg_kj, 0, reg_tmp0_imm);
         b(EQ, skip_kh_loop);
     }
     L(kh_label);
@@ -744,13 +744,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
                     shift_input_ptr * (jcp.dilate_h + 1), reg_tmp0_imm);
         }
         subs(reg_kj, reg_kj, 1);
-        xa_->cmp(reg_kj, 0);
+        xa_->cmp_imm(reg_kj, 0, reg_tmp0_imm);
         b(GT, kh_label);
     }
     L(skip_kh_loop);
     if (!jcp.signed_input && jcp.ndims > 3) {
         ldr(reg_overflow, Xbyak_aarch64::ptr(reg_param1, GET_OFF(b_overflow)));
-        xa_->cmp(reg_overflow, 0);
+        xa_->cmp_imm(reg_overflow, 0, reg_tmp0_imm);
         b(EQ, no_b_overflow_label);
         L(b_overflow_label);
         {
@@ -758,7 +758,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
 
             adds_imm(aux_reg_ker, aux_reg_ker, shift_kernel_ptr, reg_tmp0_imm);
             subs(reg_overflow, reg_overflow, 1);
-            xa_->cmp(reg_overflow, 0);
+            xa_->cmp_imm(reg_overflow, 0, reg_tmp0_imm);
             b(GT, b_overflow_label);
         }
         L(no_b_overflow_label);
@@ -775,7 +775,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::kh_loop(
         L(skip_kd_loop);
         if (!jcp.signed_input) {
             ldr(reg_ki, Xbyak_aarch64::ptr(reg_param1, GET_OFF(back_overflow)));
-            xa_->cmp(reg_ki, 0);
+            xa_->cmp_imm(reg_ki, 0, reg_tmp0_imm);
             b(EQ, no_back_overflow_label);
             L(back_overflow_label);
             {
@@ -811,9 +811,9 @@ void jit_sve_512_x8s8s32x_fwd_kernel::icb_loop(
         Label common_ker, end_ker;
 
         if (jcp.is_depthwise)
-            xa_->cmp(reg_oc_blocks, jcp.nb_ch - jcp.nb_ch_blocking);
+            xa_->cmp_imm(reg_oc_blocks, jcp.nb_ch - jcp.nb_ch_blocking, reg_tmp0_imm);
         else
-            xa_->cmp(reg_icb, 1); // The last IC block
+            xa_->cmp_imm(reg_icb, 1, reg_tmp0_imm); // The last IC block
         b(NE, common_ker);
 
         kh_loop(ur_w, pad_l, pad_r,
@@ -834,7 +834,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::icb_loop(
     adds_imm(reg_ker, reg_ker, jcp.typesize_in * ker_step, reg_tmp0_imm);
 
     subs(reg_icb, reg_icb, 1);
-    xa_->cmp(reg_icb, 0);
+    xa_->cmp_imm(reg_icb, 0, reg_tmp0_imm);
     b(GT, icb_label);
 
     subs_imm(reg_inp, reg_inp, jcp.typesize_in * inp_step * jcp.nb_ic,
@@ -846,9 +846,9 @@ void jit_sve_512_x8s8s32x_fwd_kernel::icb_loop(
         Label common_store, end_store;
 
         if (jcp.is_depthwise)
-            xa_->cmp(reg_oc_blocks, jcp.nb_ch - jcp.nb_ch_blocking);
+            xa_->cmp_imm(reg_oc_blocks, jcp.nb_ch - jcp.nb_ch_blocking, reg_tmp0_imm);
         else
-            xa_->cmp(reg_oc_blocks, jcp.nb_oc - jcp.nb_oc_blocking);
+            xa_->cmp_imm(reg_oc_blocks, jcp.nb_oc - jcp.nb_oc_blocking, reg_tmp0_imm);
 
         b(NE, common_store);
 
@@ -910,7 +910,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
     int inp_shift = jcp.typesize_in * (jcp.ur_w * jcp.stride_w * in_ic_shift);
     int out_shift = jcp.typesize_out
             * (jcp.ur_w * jcp.oc_without_padding * jcp.ngroups);
-    preamble();
+    preamble(true);
 
     vmm_mask_all_one();
 
@@ -1007,7 +1007,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
                         adds_imm(reg_out, reg_out, out_shift, reg_tmp0_imm);
 
                         adds(reg_oi, reg_oi, 1);
-                        xa_->cmp(reg_oi, n_oi);
+                        xa_->cmp_imm(reg_oi, n_oi, reg_tmp0_imm);
                         b(LT, ow_loop_label);
                     }
                 }
@@ -1052,7 +1052,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
             n_oi_next_last_ow_block--;
 
         ldr(reg_owb, Xbyak_aarch64::ptr(reg_param1, GET_OFF(owb)));
-        xa_->cmp(reg_owb, 0); // is that the first ow-block ?
+        xa_->cmp_imm(reg_owb, 0, reg_tmp0_imm); // is that the first ow-block ?
         b(GT, middle_ow_blocks_label);
 
         // the first ow block, compute left padding
@@ -1077,13 +1077,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
 
         // set number of iteration for oi-loop
         if (n_oi_last_ow_block != n_oi_not_last_ow_block) {
-            xa_->cmp(reg_owb, jcp.nb_ow - 1); // last ow-block ?
+            xa_->cmp_imm(reg_owb, jcp.nb_ow - 1, reg_tmp0_imm); // last ow-block ?
             xa_->mov_imm(reg_oi, n_oi_last_ow_block);
             b(EQ, oi_loop_label);
         }
 
         if (n_oi_next_last_ow_block != n_oi_not_last_ow_block) {
-            xa_->cmp(reg_owb, jcp.nb_ow - 2); // next to last ow-block ?
+            xa_->cmp_imm(reg_owb, jcp.nb_ow - 2, reg_tmp0_imm); // next to last ow-block ?
 
             xa_->mov_imm(reg_oi, n_oi_next_last_ow_block);
             b(EQ, oi_loop_label);
@@ -1093,7 +1093,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
         // oi loop w/o padding
         L(oi_loop_label);
         {
-            xa_->cmp(reg_oi, 0);
+            xa_->cmp_imm(reg_oi, 0, reg_tmp0_imm);
             b(LE, oi_loop_end_label);
 
             icb_loop(jcp.ur_w, 0, 0, false);
@@ -1107,13 +1107,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
         L(oi_loop_end_label);
 
         ldr(reg_owb, Xbyak_aarch64::ptr(reg_param1, GET_OFF(owb)));
-        xa_->cmp(reg_owb, 0); // first ow-block ?
+        xa_->cmp_imm(reg_owb, 0, reg_tmp0_imm); // first ow-block ?
         if (first_ow_block_padded)
             b(EQ, last_oi_label);
         else
             b(EQ, end_label);
 
-        xa_->cmp(reg_owb, jcp.nb_ow - 2); // next to last ow-block ?
+        xa_->cmp_imm(reg_owb, jcp.nb_ow - 2, reg_tmp0_imm); // next to last ow-block ?
         b(LT, end_label);
         if (next_last_ow_block_padded)
             b(EQ, last_oi_label);
@@ -1130,7 +1130,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
         adds_imm(reg_out, reg_out, out_shift, reg_tmp0_imm);
 
         ldr(reg_owb, Xbyak_aarch64::ptr(reg_param1, GET_OFF(owb)));
-        xa_->cmp(reg_owb, jcp.nb_ow - 1); // last ow_block?
+        xa_->cmp_imm(reg_owb, jcp.nb_ow - 1, reg_tmp0_imm); // last ow_block?
         b(LT, end_label);
 
         // ur_w tail
@@ -1145,8 +1145,12 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
         L(permute_index_table);
         const uint32_t _idx[]
                 = {0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15};
-        for (size_t i = 0; i < sizeof(_idx) / sizeof(_idx[0]); ++i)
+        for (size_t i = 0; i < sizeof(_idx) / sizeof(_idx[0]); ++i) {
             dw(_idx[i]);
+	    xa_->dd(_idx[i]);
+	}
+
+	binCommit();
     }
 }
 
