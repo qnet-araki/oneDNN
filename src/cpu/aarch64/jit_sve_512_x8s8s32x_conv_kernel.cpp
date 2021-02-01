@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2020-2021 Intel Corporation
 * Copyright 2020-2021 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -157,64 +157,77 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
             ld1w(vmm_pre_load.s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
         }
         /* add to accum: compensation, bias and permute */
-        for (int j = 0; j < ur_w; j++) {
-            auto vmm = vmm_out(j, k);
-            if (jcp.is_fast_depthwise) {
-                auto zmm = zmm_out(j, k);
-                auto zmm_tmp1 = ZReg(31);
-                auto zmm_tmp2 = ZReg(30);
-                auto zmm_tmp3 = ZReg(29);
-                xa_->sub(reg_stack, reg_stack, 64);
-                str(zmm_tmp1, Xbyak_aarch64::ptr(reg_stack));
-                xa_->sub(reg_stack, reg_stack, 64);
-                str(zmm_tmp2, Xbyak_aarch64::ptr(reg_stack));
-                xa_->sub(reg_stack, reg_stack, 64);
-                str(zmm_tmp3, Xbyak_aarch64::ptr(reg_stack));
-                xa_->mov(zmm_tmp1.s, 15);
-                xa_->and_(zmm_tmp1.b, mask_all_one, zmm_permute.b);
-                for (int i = 0; i < 16; i++) {
-                    cmpeq(mask_tmp.s, mask_all_one, zmm_tmp1.s, i);
-                    dup(zmm_tmp2.s, zmm.s[i]);
-                    xa_->mov(zmm_tmp3.s, mask_tmp / Xbyak_aarch64::T_m,
-                            zmm_tmp2.s);
-                }
-                xa_->mov(zmm.d, zmm_tmp3.d);
-                ldr(zmm_tmp3, Xbyak_aarch64::ptr(reg_stack));
-                xa_->add(reg_stack, reg_stack, 64);
-                ldr(zmm_tmp2, Xbyak_aarch64::ptr(reg_stack));
-                xa_->add(reg_stack, reg_stack, 64);
-                ldr(zmm_tmp1, Xbyak_aarch64::ptr(reg_stack));
-                xa_->add(reg_stack, reg_stack, 64);
-            }
-            scvtf(vmm.s, mask_all_one, vmm.s);
-            if (!jcp.signed_input) xa_->fsub(vmm.s, vmm.s, vmm_comp.s);
-            if (jcp.with_bias) xa_->fadd(vmm.s, vmm.s, vmm_bias.s);
+        {
+            std::vector<Xbyak_aarch64::ZReg> zregs_aux;
+            std::vector<Xbyak_aarch64::ZReg> zregs_to_avoid
+                    = {vmm_comp, vmm_bias};
 
-            if (!jcp.is_fast_depthwise && jcp.signed_input) {
-                /* optimization under specific conditions: optimize using preloaded scale_offset data */
-                xa_->fmul(vmm.s, vmm.s, vmm_pre_load.s);
-                if (mask_flag) {
-                    xa_->not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
-                    xa_->mov(vmm.s, mask_tmp / Xbyak_aarch64::T_m, 0);
-                }
+            for (int j = 0; j < ur_w; j++)
+                zregs_to_avoid.push_back(vmm_out(j, k));
+
+            if (jcp.is_fast_depthwise) {
+                zregs_to_avoid.push_back(zmm_permute);
+                prepare_zregs_aux(zregs_aux, zregs_to_avoid, 3);
             } else {
-                auto reg_addr = get_comp_addr_reg(reg_ptr_scales, scale_offset);
-                xa_->sub(reg_stack, reg_stack, 64);
-                str(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
-                ld1w(vmm_tmp.s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
-                xa_->fmul(vmm.s, vmm.s, vmm_tmp.s);
-                ldr(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
-                xa_->add(reg_stack, reg_stack, 64);
-                if (mask_flag) {
-                    xa_->not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
-                    xa_->mov(vmm.s, mask_tmp / Xbyak_aarch64::T_m, 0);
+                prepare_zregs_aux(zregs_aux, zregs_to_avoid, 1);
+            }
+
+            for (auto zreg : zregs_aux) {
+                xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
+                xa_->str(zreg, ptr(reg_stack));
+            }
+
+            for (int j = 0; j < ur_w; j++) {
+                auto vmm = vmm_out(j, k);
+
+                if (jcp.is_fast_depthwise) {
+                    auto zmm = zmm_out(j, k);
+                    xa_->mov(zregs_aux[0].s, 15);
+                    and_(zregs_aux[0].b, mask_all_one, zmm_permute.b);
+                    for (int i = 0; i < 16; i++) {
+                        cmpeq(mask_tmp.s, mask_all_one, zregs_aux[0].s, i);
+                        dup(zregs_aux[1].s, zmm.s[i]);
+                        xa_->mov(zregs_aux[2].s, mask_tmp / T_m, zregs_aux[1].s);
+                    }
+                    xa_->mov(zmm.d, zregs_aux[2].d);
                 }
+                scvtf(vmm.s, mask_all_one, vmm.s);
+                if (!jcp.signed_input)
+                    fsub(vmm.s, vmm.s, vmm_comp.s); /* vmm_comp 30 */
+                if (jcp.with_bias)
+                    fadd(vmm.s, vmm.s, vmm_bias.s); /* vmm_bias 31 */
+
+                if (!jcp.is_fast_depthwise && jcp.signed_input) {
+                    /* optimization under specific conditions:
+                       optimize using preloaded scale_offset data */
+                    fmul(vmm.s, vmm.s, vmm_pre_load.s);
+                    if (mask_flag) {
+                        not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
+                        mov(vmm.s, mask_tmp / T_m, 0);
+                    }
+                } else {
+                    auto reg_addr
+                            = get_comp_addr_reg(reg_ptr_scales, scale_offset);
+                    ld1w(zregs_aux[0].s, mask_all_one, ptr(reg_addr));
+                    fmul(vmm.s, vmm.s, zregs_aux[0].s);
+
+                    if (mask_flag) {
+                        not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
+                        mov(vmm.s, mask_tmp / T_m, 0);
+                    }
+                }
+            }
+            for (auto i = zregs_aux.rbegin(); i != zregs_aux.rend(); ++i) {
+                ldr(*i, ptr(reg_stack));
+                xa_->add(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
             }
         }
     }
 
     /* Do post-ops */
     if (p_sum_scale) { // post_op: sum
+        xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
+        xa_->str(vmm_tmp, ptr(reg_stack));
         for (int k = 0; k < nb_oc_block; k++) {
             const bool mask_flag
                     = last_oc_block_flag && k == nb_oc_block - 1 && mask_gflag;
@@ -228,17 +241,15 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                 if (*p_sum_scale == 1.f) {
                     xa_->fadd(vmm.s, vmm.s, vmm_prev_dst.s);
                 } else {
-                    xa_->sub(reg_stack, reg_stack, 64);
-                    str(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
                     ld1rw(vmm_tmp.s, mask_all_one / Xbyak_aarch64::T_z,
                             Xbyak_aarch64::ptr(reg_ptr_sum_scale));
                     fmla(vmm.s, mask_all_one / Xbyak_aarch64::T_m,
                             vmm_prev_dst.s, vmm_tmp.s);
-                    ldr(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
-                    xa_->add(reg_stack, reg_stack, 64);
                 }
             }
         }
+        xa_->ldr(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
+        xa_->add(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
     }
 
     // Properly saturate the accumulators for integer datatypes
@@ -250,20 +261,34 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
         xa_->mov_imm(aux_reg_saturation, float2int(saturation_ubound));
         dup(vmm_saturation.s, WReg(aux_reg_saturation.getIdx()));
 
-        for (int k = 0; k < nb_oc_block; k++) {
-            for (int j = 0; j < ur_w; j++) {
-                auto vmm = vmm_out(j, k);
-                if (jcp.dst_dt == data_type::u8) {
-                    fmaxnm(vmm.s, mask_all_one, vmm_zero.s);
-                    fmax(vmm.s, mask_all_one, vmm_zero.s);
-                }
-                fminnm(vmm.s, mask_all_one, vmm_saturation.s);
-                fmin(vmm.s, mask_all_one, vmm_saturation.s);
+        using f = void (CodeGenerator::*)(
+                const ZRegS &, const _PReg &, const ZRegS &);
 
-                frintn(vmm.s, mask_all_one, vmm.s);
-                fcvtzs(vmm.s, mask_all_one, vmm.s);
-            }
-        }
+        auto loop_mn = [this, nb_oc_block, ur_w](f &mn, PReg p, bool isSrc,
+                               ZRegS src = ZRegS(DUMMY_IDX)) {
+            for (int k = 0; k < nb_oc_block; k++)
+                for (int j = 0; j < ur_w; j++) {
+                    auto vmm = vmm_out(j, k);
+                    if (isSrc)
+                        (this->*mn)(vmm.s, p, src);
+                    else
+                        (this->*mn)(vmm.s, p, vmm.s);
+                }
+        };
+
+        /* fmaxnm and fminnm, if one element value is NaN then the result is
+           the numeric value. Since vmm_zero and vmm_saturation are always
+           the numeric values, the results also becomes the numeric values. */
+        f mn_fmaxnm = &CodeGenerator::fmaxnm;
+        f mn_fminnm = &CodeGenerator::fminnm;
+        f mn_frintn = &CodeGenerator::frintn;
+        f mn_fcvtzs = &CodeGenerator::fcvtzs;
+
+        if (jcp.dst_dt == data_type::u8)
+            loop_mn(mn_fmaxnm, mask_all_one, true, vmm_zero.s);
+        loop_mn(mn_fminnm, mask_all_one, true, vmm_saturation.s);
+        loop_mn(mn_frintn, mask_all_one, false);
+        loop_mn(mn_fcvtzs, mask_all_one, false);
     }
 
     /* write out register to output_addr */
@@ -357,10 +382,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker_dw(int ur_w, int pad_l,
         }
     }
 
-    if (!jcp.signed_input) {
-        eor(zmm_shifted_zero.d, zmm_shifted_zero.d, zmm_shifted_zero.d);
-        xa_->sub(zmm_shifted_zero.b, zmm_shifted_zero.b, vmm_shift.b);
-    }
+    if (!jcp.signed_input) { mov(zmm_shifted_zero.d, vmm_shift.d); }
 
     for (int ci = 0; ci < jcp.nb_ch_blocking; ci++) {
         const bool mask_flag = last_ic_block_flag != no_last_block
@@ -410,7 +432,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker_dw(int ur_w, int pad_l,
                     xa_->add(reg_stack, reg_stack, 64);
                 }
                 if (!jcp.signed_input)
-                    xa_->sub(zmm_inp_tmp.b, zmm_inp_tmp.b, vmm_shift.b);
+                    xa_->add(zmm_inp_tmp.b, zmm_inp_tmp.b, vmm_shift.b);
             }
         }
         for (int ki = 0; ki < jcp.kw; ki++) {
@@ -500,7 +522,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker_dw(int ur_w, int pad_l,
                                 xa_->add(reg_stack, reg_stack, 64);
                             }
                             if (!jcp.signed_input)
-                                xa_->sub(zmm_src.b, zmm_src.b, vmm_shift.b);
+                                xa_->add(zmm_src.b, zmm_src.b, vmm_shift.b);
                         }
                         compute(zmm_out(oi, ci), zmm_wei, zmm_src);
                     } else {
@@ -557,8 +579,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
             if (h_padded) {
                 /* fill padded area with shifted values */
                 auto inp = vmm_inp(0, nb_oc_block);
-                eor(inp.d, inp.d, inp.d);
-                xa_->sub(inp.b, inp.b, vmm_shift.b);
+                mov(inp.d, vmm_shift.d);
             } else {
                 for (int jj = _start; jj < _end; jj++) {
                     int aux_input_offset = input_offset(jj, ic, ki);
@@ -604,14 +625,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                             }
                         }
                         if (!jcp.signed_input)
-                            xa_->sub(vmm_inp(jj, nb_oc_block).b,
+                            xa_->add(vmm_inp(jj, nb_oc_block).b,
                                     vmm_inp(jj, nb_oc_block).b, vmm_shift.b);
                     } else {
                         /* fill padded area with shifted values */
                         if (!jcp.signed_input) {
                             auto inp = vmm_inp(jj, nb_oc_block);
-                            eor(inp.d, inp.d, inp.d);
-                            xa_->sub(inp.b, inp.b, vmm_shift.b);
+                            mov(inp.d, vmm_shift.d);
                         }
                     }
                 }
