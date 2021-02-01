@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2020-2021 Intel Corporation
 * Copyright 2020-2021 FUJITSU LIMITED
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -164,6 +164,27 @@ private:
     ZReg zmm_permute = ZReg(0);
 
     bool mask_gflag;
+
+    bool prepare_zregs_aux(std::vector<Xbyak_aarch64::ZReg> &zregs_aux,
+            const std::vector<Xbyak_aarch64::ZReg> &zregs_to_avoid, int num) {
+        uint32_t isVacant = ~0x0;
+
+        for (auto avoid : zregs_to_avoid)
+            isVacant ^= 1 << avoid.getIdx();
+
+        while (num) {
+            for (int i = 31; i >= 0; --i) {
+                if (isVacant & (1 << i)) {
+                    zregs_aux.push_back(Xbyak_aarch64::ZReg(i));
+                    num--;
+                }
+                if (num == 0) break;
+            }
+        }
+
+        assert(num == 0);
+        return num ? false : true;
+    }
 
     ZReg vmm_out(int i_ur, int i_oc) {
         int nb_x_blocking
