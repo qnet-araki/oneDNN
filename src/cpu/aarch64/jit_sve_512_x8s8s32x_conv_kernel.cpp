@@ -187,7 +187,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                     for (int i = 0; i < 16; i++) {
                         cmpeq(mask_tmp.s, mask_all_one, zregs_aux[0].s, i);
                         dup(zregs_aux[1].s, zmm.s[i]);
-                        xa_->mov(zregs_aux[2].s, mask_tmp / T_m, zregs_aux[1].s);
+                        xa_->mov(
+                                zregs_aux[2].s, mask_tmp / T_m, zregs_aux[1].s);
                     }
                     xa_->mov(zmm.d, zregs_aux[2].d);
                 }
@@ -208,7 +209,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                 } else {
                     auto reg_addr
                             = get_comp_addr_reg(reg_ptr_scales, scale_offset);
-                    ld1w(zregs_aux[0].s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
+                    ld1w(zregs_aux[0].s, mask_all_one,
+                            Xbyak_aarch64::ptr(reg_addr));
                     xa_->fmul(vmm.s, vmm.s, zregs_aux[0].s);
 
                     if (mask_flag) {
