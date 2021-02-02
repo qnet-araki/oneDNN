@@ -174,7 +174,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
 
             for (auto zreg : zregs_aux) {
                 xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
-                xa_->str(zreg, ptr(reg_stack));
+                xa_->str(zreg, Xbyak_aarch64::ptr(reg_stack));
             }
 
             for (int j = 0; j < ur_w; j++) {
@@ -183,7 +183,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                 if (jcp.is_fast_depthwise) {
                     auto zmm = zmm_out(j, k);
                     xa_->mov(zregs_aux[0].s, 15);
-                    and_(zregs_aux[0].b, mask_all_one, zmm_permute.b);
+                    xa_->and_(zregs_aux[0].b, mask_all_one, zmm_permute.b);
                     for (int i = 0; i < 16; i++) {
                         cmpeq(mask_tmp.s, mask_all_one, zregs_aux[0].s, i);
                         dup(zregs_aux[1].s, zmm.s[i]);
@@ -193,32 +193,32 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                 }
                 scvtf(vmm.s, mask_all_one, vmm.s);
                 if (!jcp.signed_input)
-                    fsub(vmm.s, vmm.s, vmm_comp.s); /* vmm_comp 30 */
+                    xa_->fsub(vmm.s, vmm.s, vmm_comp.s); /* vmm_comp 30 */
                 if (jcp.with_bias)
-                    fadd(vmm.s, vmm.s, vmm_bias.s); /* vmm_bias 31 */
+                    xa_->fadd(vmm.s, vmm.s, vmm_bias.s); /* vmm_bias 31 */
 
                 if (!jcp.is_fast_depthwise && jcp.signed_input) {
                     /* optimization under specific conditions:
                        optimize using preloaded scale_offset data */
-                    fmul(vmm.s, vmm.s, vmm_pre_load.s);
+                    xa_->fmul(vmm.s, vmm.s, vmm_pre_load.s);
                     if (mask_flag) {
-                        not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
-                        mov(vmm.s, mask_tmp / T_m, 0);
+                        xa_->not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
+                        xa_->mov(vmm.s, mask_tmp / Xbyak_aarch64::T_m, 0);
                     }
                 } else {
                     auto reg_addr
                             = get_comp_addr_reg(reg_ptr_scales, scale_offset);
-                    ld1w(zregs_aux[0].s, mask_all_one, ptr(reg_addr));
-                    fmul(vmm.s, vmm.s, zregs_aux[0].s);
+                    ld1w(zregs_aux[0].s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
+                    xa_->fmul(vmm.s, vmm.s, zregs_aux[0].s);
 
                     if (mask_flag) {
-                        not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
-                        mov(vmm.s, mask_tmp / T_m, 0);
+                        xa_->not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
+                        xa_->mov(vmm.s, mask_tmp / Xbyak_aarch64::T_m, 0);
                     }
                 }
             }
             for (auto i = zregs_aux.rbegin(); i != zregs_aux.rend(); ++i) {
-                ldr(*i, ptr(reg_stack));
+                ldr(*i, Xbyak_aarch64::ptr(reg_stack));
                 xa_->add(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
             }
         }
@@ -227,7 +227,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     /* Do post-ops */
     if (p_sum_scale) { // post_op: sum
         xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
-        xa_->str(vmm_tmp, ptr(reg_stack));
+        xa_->str(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
         for (int k = 0; k < nb_oc_block; k++) {
             const bool mask_flag
                     = last_oc_block_flag && k == nb_oc_block - 1 && mask_gflag;
@@ -382,7 +382,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker_dw(int ur_w, int pad_l,
         }
     }
 
-    if (!jcp.signed_input) { mov(zmm_shifted_zero.d, vmm_shift.d); }
+    if (!jcp.signed_input) { xa_->mov(zmm_shifted_zero.d, vmm_shift.d); }
 
     for (int ci = 0; ci < jcp.nb_ch_blocking; ci++) {
         const bool mask_flag = last_ic_block_flag != no_last_block
@@ -579,7 +579,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
             if (h_padded) {
                 /* fill padded area with shifted values */
                 auto inp = vmm_inp(0, nb_oc_block);
-                mov(inp.d, vmm_shift.d);
+                xa_->mov(inp.d, vmm_shift.d);
             } else {
                 for (int jj = _start; jj < _end; jj++) {
                     int aux_input_offset = input_offset(jj, ic, ki);
@@ -631,7 +631,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                         /* fill padded area with shifted values */
                         if (!jcp.signed_input) {
                             auto inp = vmm_inp(jj, nb_oc_block);
-                            mov(inp.d, vmm_shift.d);
+                            xa_->mov(inp.d, vmm_shift.d);
                         }
                     }
                 }
