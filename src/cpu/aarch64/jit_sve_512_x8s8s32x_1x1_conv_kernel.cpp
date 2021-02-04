@@ -507,6 +507,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
             xa_->mov_imm(reg_tmp0_imm, float2int(saturation_ubound));
             dup(vmm_saturation.s, WReg(reg_tmp0_imm.getIdx()));
 
+#if 0 // optimize instruction order	    
             for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
                 for (int i_ur = 0; i_ur < ur; ++i_ur) {
                     auto r = vreg_accum(i_load, i_ur);
@@ -531,7 +532,35 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
 #endif
                 }
             }
-        }
+#else
+        using f = void (CodeGenerator::*)(
+                const ZRegS &, const _PReg &, const ZRegS &);
+
+        auto loop_mn = [this, load_loop_blk, ur](f &mn, PReg p, bool isSrc,
+                               ZRegS src = ZRegS(DUMMY_IDX)) {
+            for (int i_load = 0; i_load < load_loop_blk; ++i_load)
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                    //auto r = vreg_accum(i_load, i_ur);
+                    auto r = ZReg(i_ur * load_loop_blk + i_load);
+                    if (isSrc)
+                        (this->*mn)(r.s, p, src);
+                    else
+                        (this->*mn)(r.s, p, r.s);
+                 }
+	};
+
+        f mn_fmaxnm = &CodeGenerator::fmaxnm;
+        f mn_fminnm = &CodeGenerator::fminnm;
+        f mn_frintn = &CodeGenerator::frintn;
+        f mn_fcvtzs = &CodeGenerator::fcvtzs;
+
+        if (jcp.dst_dt == data_type::u8)
+            loop_mn(mn_fmaxnm, vmask, true, vmm_zero.s);
+        loop_mn(mn_fminnm, vmask, true, vmm_saturation.s);
+        loop_mn(mn_frintn, vmask, false);
+        loop_mn(mn_fcvtzs, vmask, false);
+#endif
+	}
 
         // store to the destination
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
