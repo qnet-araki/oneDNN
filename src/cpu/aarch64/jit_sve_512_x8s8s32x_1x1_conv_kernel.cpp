@@ -308,7 +308,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                     case data_type::s32:
                         bias_ptr(vmm_bias, i_load, mask_flag);
                         break;
-                    case data_type::s8:
+#if 0
+		    case data_type::s8:
                         xa_->sub(x22, x22, 64);
                         str(ZReg(29), Xbyak_aarch64::ptr(x22));
                         bias_ptr8(ZReg(29), i_load, mask_flag);
@@ -340,6 +341,32 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
                         xa_->add(x22, x22, 64);
                         break;
+#else
+                    case data_type::s8:
+                        bias_ptr8(ZReg(17), i_load, mask_flag);
+                        zip1(ZRegB(17), ZRegB(17), ZRegB(17));
+                        zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                        sxtb(ZRegS(vmm_bias.getIdx()),
+                                vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                        if (mask_flag) {
+                            xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
+                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
+                                    0);
+                        }
+                        break;
+                    case data_type::u8:
+                        bias_ptr8(ZReg(17), i_load, mask_flag);
+                        zip1(ZRegB(17), ZRegB(17), ZRegB(17));
+                        zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                        uxtb(ZRegS(vmm_bias.getIdx()),
+                                vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                        if (mask_flag) {
+                            xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
+                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
+                                    0);
+                        }
+                        break;
+#endif
                     default: assert(!"unsupported data type");
                 }
                 if (jcp.bia_dt != data_type::f32)
@@ -416,7 +443,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         case data_type::s32:
                             output_ptr(vmm_prev_dst, i_load, i_ur, mask_flag);
                             break;
-                        case data_type::s8:
+#if 0
+			case data_type::s8:
                             xa_->sub(x22, x22, 64);
                             str(ZReg(29), Xbyak_aarch64::ptr(x22));
                             output_ptr8(ZReg(29), i_load, i_ur, mask_flag);
@@ -448,6 +476,32 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                             ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
                             xa_->add(x22, x22, 64);
                             break;
+#else
+                        case data_type::s8:
+                            output_ptr8(ZReg(17), i_load, i_ur, mask_flag);
+                            zip1(ZRegB(17), ZRegB(17), ZRegB(17));
+                            zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                            sxtb(ZRegS(vmm_prev_dst.getIdx()),
+                                    vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                            if (mask_flag) {
+                                xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
+                                xa_->mov(vmm_prev_dst.s,
+                                        mask_tmp / Xbyak_aarch64::T_m, 0);
+                            }
+                            break;
+                        case data_type::u8:
+                            output_ptr8(ZReg(17), i_load, i_ur, mask_flag);
+                            zip1(ZRegB(17), ZRegB(17), ZRegB(17));
+                            zip1(ZRegH(17), ZRegH(17), ZRegH(18));
+                            uxtb(ZRegS(vmm_prev_dst.getIdx()),
+                                    vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                            if (mask_flag) {
+                                xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
+                                xa_->mov(vmm_prev_dst.s,
+                                        mask_tmp / Xbyak_aarch64::T_m, 0);
+                            }
+                            break;
+#endif
                         default: assert(!"unsupported data type");
                     }
                     if (jcp.dst_dt != data_type::f32)
@@ -460,7 +514,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                     } else {
                         // vfmadd231ps(
                         //         r, vmm_prev_dst, zword_b[reg_ptr_sum_scale]);
-                        xa_->sub(x22, x22, 64);
+#if 0
+			xa_->sub(x22, x22, 64);
                         str(ZReg(29), Xbyak_aarch64::ptr(x22));
                         ld1rw(ZRegS(29), vmask / Xbyak_aarch64::T_z,
                                 Xbyak_aarch64::ptr(reg_ptr_sum_scale));
@@ -468,6 +523,12 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                                 ZRegS(29));
                         ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
                         xa_->add(x22, x22, 64);
+#else
+                        ld1rw(ZRegS(17), vmask / Xbyak_aarch64::T_z,
+                                Xbyak_aarch64::ptr(reg_ptr_sum_scale));
+                        fmla(r.s, vmask / Xbyak_aarch64::T_m, vmm_prev_dst.s,
+                                ZRegS(17));
+#endif
                     }
                 }
             }
@@ -499,7 +560,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
         if (one_of(jcp.dst_dt, u8, data_type::s8, s32)) {
             //            init_saturate_f32(vmm_zero, vmm_saturation,
             //                    reg_ptr_saturation_ubound, f32, jcp.dst_dt);
-
+            //
             if (jcp.dst_dt == data_type::u8) {
                 eor(vmm_zero.d, vmm_zero.d, vmm_zero.d);
             }
@@ -533,34 +594,34 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 }
             }
 #else
-        using f = void (CodeGenerator::*)(
-                const ZRegS &, const _PReg &, const ZRegS &);
+            using f = void (CodeGenerator::*)(
+                    const ZRegS &, const _PReg &, const ZRegS &);
 
-        auto loop_mn = [this, load_loop_blk, ur](f &mn, PReg p, bool isSrc,
-                               ZRegS src = ZRegS(DUMMY_IDX)) {
-            for (int i_load = 0; i_load < load_loop_blk; ++i_load)
-                for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                    //auto r = vreg_accum(i_load, i_ur);
-                    auto r = ZReg(i_ur * load_loop_blk + i_load);
-                    if (isSrc)
-                        (this->*mn)(r.s, p, src);
-                    else
-                        (this->*mn)(r.s, p, r.s);
-                 }
-	};
+            auto loop_mn = [this, load_loop_blk, ur](f &mn, PReg p, bool isSrc,
+                                   ZRegS src = ZRegS(DUMMY_IDX)) {
+                for (int i_load = 0; i_load < load_loop_blk; ++i_load)
+                    for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                        //auto r = vreg_accum(i_load, i_ur);
+                        auto r = ZReg(i_ur * load_loop_blk + i_load);
+                        if (isSrc)
+                            (this->*mn)(r.s, p, src);
+                        else
+                            (this->*mn)(r.s, p, r.s);
+                    }
+            };
 
-        f mn_fmaxnm = &CodeGenerator::fmaxnm;
-        f mn_fminnm = &CodeGenerator::fminnm;
-        f mn_frintn = &CodeGenerator::frintn;
-        f mn_fcvtzs = &CodeGenerator::fcvtzs;
+            f mn_fmaxnm = &CodeGenerator::fmaxnm;
+            f mn_fminnm = &CodeGenerator::fminnm;
+            f mn_frintn = &CodeGenerator::frintn;
+            f mn_fcvtzs = &CodeGenerator::fcvtzs;
 
-        if (jcp.dst_dt == data_type::u8)
-            loop_mn(mn_fmaxnm, vmask, true, vmm_zero.s);
-        loop_mn(mn_fminnm, vmask, true, vmm_saturation.s);
-        loop_mn(mn_frintn, vmask, false);
-        loop_mn(mn_fcvtzs, vmask, false);
+            if (jcp.dst_dt == data_type::u8)
+                loop_mn(mn_fmaxnm, vmask, true, vmm_zero.s);
+            loop_mn(mn_fminnm, vmask, true, vmm_saturation.s);
+            loop_mn(mn_frintn, vmask, false);
+            loop_mn(mn_fcvtzs, vmask, false);
 #endif
-	}
+        }
 
         // store to the destination
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
@@ -853,7 +914,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
         bcast_loop(load_loop_blk);
         add_imm(reg_load_data, reg_load_data,
                 load_loop_blk * jcp.load_loop_load_step, reg_tmp0_imm);
-        if (jcp.with_bias) {
+#if 0
+	if (jcp.with_bias) {
             if (!jcp.signed_input)
                 ldr(reg_bias_data,
                         SVE_compress_addr(reg_rsp, reg_bias_data_off));
@@ -871,6 +933,30 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
                     reg_tmp0_imm);
             str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
         }
+#else
+        if (!jcp.signed_input) {
+            if (jcp.with_bias) {
+                ldr(reg_bias_data,
+                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
+                add_imm(reg_bias_data, reg_bias_data,
+                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
+                        reg_tmp0_imm);
+                str(reg_bias_data,
+                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
+            }
+            ldr(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
+            add_imm(reg_comp_data, reg_comp_data,
+                    load_loop_blk * jcp.load_block * sizeof(int32_t),
+                    reg_tmp0_imm);
+            str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
+        } else {
+            if (jcp.with_bias) {
+                add_imm(reg_bias_data, reg_bias_data,
+                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
+                        reg_tmp0_imm);
+            }
+        }
+#endif
 #if 0
         if (jcp.src_zero_point) {
             ldr(reg_zp_compensation,

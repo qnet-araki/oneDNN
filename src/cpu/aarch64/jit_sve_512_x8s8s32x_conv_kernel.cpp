@@ -194,9 +194,9 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                 }
                 scvtf(vmm.s, mask_all_one, vmm.s);
                 if (!jcp.signed_input)
-                    xa_->fsub(vmm.s, vmm.s, vmm_comp.s); /* vmm_comp 30 */
+                    xa_->fsub(vmm.s, vmm.s, vmm_comp.s);
                 if (jcp.with_bias)
-                    xa_->fadd(vmm.s, vmm.s, vmm_bias.s); /* vmm_bias 31 */
+                    xa_->fadd(vmm.s, vmm.s, vmm_bias.s);
 
                 if (!jcp.is_fast_depthwise && jcp.signed_input) {
                     /* optimization under specific conditions:
