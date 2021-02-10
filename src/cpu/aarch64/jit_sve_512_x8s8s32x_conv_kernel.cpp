@@ -136,6 +136,14 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     if (p_sum_scale && *p_sum_scale != 1.f)
         xa_->mov_imm(reg_ptr_sum_scale, (size_t)p_sum_scale);
 
+    const int idx = vmm_out(ur_w - 1, nb_oc_block - 1).getIdx() + 1;
+    const bool is_opt = idx <= 31 & jcp.is_oc_scale * oc_block == 0;
+    ZReg _zregs_aux = ZReg(idx);
+    if (is_opt && (!(jcp.is_fast_depthwise && !jcp.signed_input))) {
+        auto reg_addr = get_comp_addr_reg(reg_ptr_scales, 0);
+        ld1w(_zregs_aux.s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
+    }
+
     for (int k = 0; k < nb_oc_block; k++) {
         const bool mask_flag
                 = last_oc_block_flag && k == nb_oc_block - 1 && mask_gflag;
@@ -207,11 +215,14 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                         xa_->mov(vmm.s, mask_tmp / Xbyak_aarch64::T_m, 0);
                     }
                 } else {
-                    auto reg_addr
-                            = get_comp_addr_reg(reg_ptr_scales, scale_offset);
-                    ld1w(zregs_aux[0].s, mask_all_one,
-                            Xbyak_aarch64::ptr(reg_addr));
-                    xa_->fmul(vmm.s, vmm.s, zregs_aux[0].s);
+                    if (!is_opt) {
+                        _zregs_aux = zregs_aux[0];
+                        auto reg_addr = get_comp_addr_reg(
+                                reg_ptr_scales, scale_offset);
+                        ld1w(_zregs_aux.s, mask_all_one,
+                                Xbyak_aarch64::ptr(reg_addr));
+                    }
+                    xa_->fmul(vmm.s, vmm.s, _zregs_aux.s);
 
                     if (mask_flag) {
                         xa_->not_(mask_tmp.b, mask_all_one.b, ktail_mask.b);
