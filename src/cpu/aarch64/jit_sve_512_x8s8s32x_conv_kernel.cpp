@@ -139,7 +139,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     const int idx = vmm_out(ur_w - 1, nb_oc_block - 1).getIdx() + 1;
     const bool is_opt = idx <= 31 & jcp.is_oc_scale * oc_block == 0;
     ZReg _zregs_aux = ZReg(idx);
-    if (is_opt && (!(jcp.is_fast_depthwise && !jcp.signed_input))) {
+    if (is_opt && (!(!jcp.is_fast_depthwise && jcp.signed_input))) {
         auto reg_addr = get_comp_addr_reg(reg_ptr_scales, 0);
         ld1w(_zregs_aux.s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
     }
