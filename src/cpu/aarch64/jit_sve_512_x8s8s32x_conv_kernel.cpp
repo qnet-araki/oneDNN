@@ -46,6 +46,22 @@ void pick_loop_order(jit_conv_conf_t &jcp, int nthr) {
 }
 } // namespace
 
+bool jit_sve_512_x8s8s32x_fwd_kernel::maybe_eltwise(
+        int position) {
+    using namespace primitive_kind;
+    const auto &p = attr_.post_ops_;
+
+    if (position == 0) {
+        /* eltwise before sum */
+        return p.contain(eltwise, 0);
+    } else if (position == 1) {
+        /* eltwise after sum */
+        return p.contain(sum, 0) && p.contain(eltwise, 1);
+    }
+
+    return false;
+}
+
 void jit_sve_512_x8s8s32x_fwd_kernel::prepare_output(int ur_w) {
     int nb_oc_block
             = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
@@ -111,6 +127,12 @@ void jit_sve_512_x8s8s32x_fwd_kernel::cvt2ps(data_type_t type_in,
         default: assert(!"unsupported data type");
     }
     if (type_in != data_type::f32) scvtf(vmm_in.s, mask_all_one, vmm_in.s);
+}
+
+void jit_sve_512_x8s8s32x_fwd_kernel::compute_eltwise(int ur_w) {
+    int nb_oc_block
+            = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
+    eltwise_injector_->compute_vector_range(0, nb_oc_block * ur_w);
 }
 
 void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
@@ -237,6 +259,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     }
 
     /* Do post-ops */
+    if (maybe_eltwise(0)) compute_eltwise(ur_w);
     if (p_sum_scale) { // post_op: sum
         xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
         xa_->str(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
@@ -263,6 +286,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
         xa_->ldr(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
         xa_->add(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
     }
+    if (maybe_eltwise(1)) compute_eltwise(ur_w);
 
     // Properly saturate the accumulators for integer datatypes
     if (one_of(jcp.dst_dt, u8, data_type::s8, s32)) {
@@ -1097,6 +1121,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
     preamble(true);
 
     vmm_mask_all_one();
+    xa_->mov(reg_param1, abi_param1);
 
     if (jcp.is_depthwise) {
         int idx = jcp.max_regs_ur - 1;
@@ -1327,6 +1352,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
     }
     postamble();
 
+    if (jcp.with_eltwise) eltwise_injector_->prepare_table();
+
     if (jcp.is_fast_depthwise) {
         align(64);
         L(permute_index_table);
@@ -1346,8 +1373,18 @@ bool jit_sve_512_x8s8s32x_fwd_kernel::post_ops_ok(
     using namespace primitive_kind;
     const auto &p = attr.post_ops_;
 
-    /* At this time, post_op is not supported. */
-    return p.len() ? false : true;
+    auto is_eltwise = [&](int idx) { return p.entry_[idx].is_eltwise(); };
+
+    switch (p.len()) {
+        case 0: return true;
+        case 1: return is_eltwise(0) || p.contain(sum, 0);
+        case 2:
+            return (p.contain(sum, 0) && is_eltwise(1))
+                    || (p.contain(sum, 1) && is_eltwise(0));
+        default: return false;
+    }
+
+    return false;
 }
 
 status_t jit_sve_512_x8s8s32x_fwd_kernel::init_conf(jit_conv_conf_t &jcp,
@@ -1457,6 +1494,9 @@ status_t jit_sve_512_x8s8s32x_fwd_kernel::init_conf(jit_conv_conf_t &jcp,
     if (!post_ops_ok(jcp, attr)) return status::unimplemented;
 
     const auto &p = attr.post_ops_;
+    const int eltwise_ind = p.find(primitive_kind::eltwise);
+    jcp.with_eltwise = eltwise_ind != -1;
+    if (jcp.with_eltwise) jcp.eltwise = p.entry_[eltwise_ind].eltwise;
 
     const auto zp = attr.zero_points_;
     jcp.dst_zero_point = !zp.has_default_values(DNNL_ARG_DST);
