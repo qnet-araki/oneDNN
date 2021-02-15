@@ -709,73 +709,205 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 i_reduce += reduce_step) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load)
                 load_ptr(vreg_load(i_load), i_reduce, i_load);
-            for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                if (jcp.signed_input) {
-                    if (last_block && ic_tail_size != 0
-                            && i_reduce == loop_unroll - reduce_step) {
-                        auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
-                        // load_bytes(xmm_bcast, aux_reg_bcast_data,
-                        //         jcp.ic_without_padding * i_ur + i_reduce,
-                        //         ic_tail_size);
-                        for (int r = 0; r < ic_tail_size; ++r) {
-                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                    (jcp.ic_without_padding * i_ur + i_reduce
-                                            + r),
-                                    reg_tmp0_imm);
-                            ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
-                            ins(VReg16B(xmm_bcast.getIdx())[r],
-                                    WReg(reg_tmp1_imm.getIdx()));
-                        }
-                        // vpbroadcastd(vmm_bcast, xmm_bcast);
-                        auto _bcast
-                                = ((i_ur % 2) == 0) ? vmm_bcast : vmm_bcast2;
-                        dup(ZRegS(_bcast.getIdx()),
-                                ZRegS(xmm_bcast.getIdx())[0]);
-                    } else {
-                        if (i_ur == 0) {
-                            // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, i_ur, false));
-                            bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
-                        }
-                        if ((i_ur + 1) < ur) {
-                            ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast2
-                                                            : vmm_bcast;
-                            // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, (i_ur+1), false));
-                            bcast_ptr(_bcast, i_reduce, (i_ur + 1), false);
-                        }
-                    }
-                    for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                        ZReg _bcast
-                                = ((i_ur % 2) == 0) ? vmm_bcast : vmm_bcast2;
-                        compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
-                                _bcast);
-                    }
-                } else {
-                    if (last_block && ic_tail_size != 0
-                            && i_reduce == loop_unroll - reduce_step) {
-                        auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
-                        for (int r = 0; r < ic_tail_size; ++r) {
-                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                    (jcp.ic_without_padding * i_ur + i_reduce
-                                            + r),
-                                    reg_tmp0_imm);
-                            ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
-                            ins(VReg16B(xmm_bcast.getIdx())[r],
-                                    WReg(reg_tmp1_imm.getIdx()));
-                        }
-                        dup(ZRegS(vmm_bcast.getIdx()),
-                                ZRegS(xmm_bcast.getIdx())[0]);
-                    } else {
-                        bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
-                    }
-                    xa_->add(vmm_bcast.b, vmm_bcast.b, vmm_shift.b);
-                    for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                        compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
-                                vmm_bcast);
+#if 0
+            if ((ur < 9) && (!jcp.signed_input)) {
+    		    if (ur > 3) {
+                    for (int zr = 0; zr < ur - 3; zr++) {
+                        xa_->sub(x22, x22, 64);
+                        str(ZReg(27 - zr), Xbyak_aarch64::ptr(x22));
                     }
                 }
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                    auto r_idx = (i_ur == 0) ? vmm_bcast.getIdx()
+                                             : vmm_bcast.getIdx() - 1 - i_ur;
+                    if (last_block && ic_tail_size != 0
+                            && i_reduce == loop_unroll - reduce_step) {
+                        auto xmm_bcast = VReg16B(r_idx);
+                        for (int r = 0; r < ic_tail_size; ++r) {
+                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                    (jcp.ic_without_padding * i_ur + i_reduce
+                                            + r),
+                                    reg_tmp0_imm);
+                            ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
+                            ins(VReg16B(xmm_bcast.getIdx())[r],
+                                    WReg(reg_tmp1_imm.getIdx()));
+                        }
+                        dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
+                    } else {
+                        auto xmm_bcast = ZReg(r_idx);
+                        bcast_ptr(xmm_bcast, i_reduce, i_ur, false);
+                    }
+                    xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
+                }
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                    auto r_idx = (i_ur == 0) ? vmm_bcast.getIdx()
+                                             : vmm_bcast.getIdx() - 1 - i_ur;
+                    auto xmm_bcast = ZReg(r_idx);
+                    for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                        compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
+                                xmm_bcast);
+                    }
+                }
+		if (ur > 3) {
+                    for (int zr = 0; zr < ur - 3; zr++) {
+                        ldr(ZReg(27 - zr), Xbyak_aarch64::ptr(x22));
+                        xa_->add(x22, x22, 64);
+                    }
+                }
+#endif
+            if (!jcp.signed_input) {
+                int lpn = ur / 3;
+                int adj = ur % 3;
+                int lp = 0;
+                if (lpn != 0) {
+                    for (int lp1 = 0; lp1 < lpn; ++lp1) {
+                        for (int lp2 = 0; lp2 < 3; ++lp2) {
+                            auto r_idx = (lp2 == 0)
+                                    ? vmm_bcast.getIdx()
+                                    : vmm_bcast.getIdx() - 1 - lp2;
+                            if (last_block && ic_tail_size != 0
+                                    && i_reduce == loop_unroll - reduce_step) {
+                                auto xmm_bcast = VReg16B(r_idx);
+                                for (int r = 0; r < ic_tail_size; ++r) {
+                                    add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                            (jcp.ic_without_padding
+                                                            * (lp1 * 3 + lp2)
+                                                    + i_reduce + r),
+                                            reg_tmp0_imm);
+                                    ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                            Xbyak_aarch64::ptr(reg_tmp0_adr));
+                                    ins(VReg16B(xmm_bcast.getIdx())[r],
+                                            WReg(reg_tmp1_imm.getIdx()));
+                                }
+                                dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
+                            } else {
+                                auto xmm_bcast = ZReg(r_idx);
+                                bcast_ptr(xmm_bcast, i_reduce, lp1 * 3 + lp2,
+                                        false);
+                            }
+                            xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
+                        }
+                        for (int lp2 = 0; lp2 < 3; ++lp2) {
+                            auto r_idx = (lp2 == 0)
+                                    ? vmm_bcast.getIdx()
+                                    : vmm_bcast.getIdx() - 1 - lp2;
+                            auto xmm_bcast = ZReg(r_idx);
+                            for (int i_load = 0; i_load < load_loop_blk;
+                                    ++i_load) {
+                                compute(vreg_accum(i_load, lp1 * 3 + lp2),
+                                        vreg_load(i_load), xmm_bcast);
+                            }
+                        }
+                    }
+                }
+                if (adj != 0) {
+                    for (int lp2 = 0; lp2 < adj; ++lp2) {
+                        auto r_idx = (lp2 == 0) ? vmm_bcast.getIdx()
+                                                : vmm_bcast.getIdx() - 1 - lp2;
+                        if (last_block && ic_tail_size != 0
+                                && i_reduce == loop_unroll - reduce_step) {
+                            auto xmm_bcast = VReg16B(r_idx);
+                            for (int r = 0; r < ic_tail_size; ++r) {
+                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                        (jcp.ic_without_padding
+                                                        * (lpn * 3 + lp2)
+                                                + i_reduce + r),
+                                        reg_tmp0_imm);
+                                ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
+                                ins(VReg16B(xmm_bcast.getIdx())[r],
+                                        WReg(reg_tmp1_imm.getIdx()));
+                            }
+                            dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
+                        } else {
+                            auto xmm_bcast = ZReg(r_idx);
+                            bcast_ptr(
+                                    xmm_bcast, i_reduce, lpn * 3 + lp2, false);
+                        }
+                        xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
+                    }
+                    for (int lp2 = 0; lp2 < adj; ++lp2) {
+                        auto r_idx = (lp2 == 0) ? vmm_bcast.getIdx()
+                                                : vmm_bcast.getIdx() - 1 - lp2;
+                        auto xmm_bcast = ZReg(r_idx);
+                        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                            compute(vreg_accum(i_load, lpn * 3 + lp2),
+                                    vreg_load(i_load), xmm_bcast);
+                        }
+                    }
+                }
+            } else {
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                    if (jcp.signed_input) {
+                        if (last_block && ic_tail_size != 0
+                                && i_reduce == loop_unroll - reduce_step) {
+                            auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
+                            // load_bytes(xmm_bcast, aux_reg_bcast_data,
+                            //         jcp.ic_without_padding * i_ur + i_reduce,
+                            //         ic_tail_size);
+                            for (int r = 0; r < ic_tail_size; ++r) {
+                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                        (jcp.ic_without_padding * i_ur
+                                                + i_reduce + r),
+                                        reg_tmp0_imm);
+                                ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
+                                ins(VReg16B(xmm_bcast.getIdx())[r],
+                                        WReg(reg_tmp1_imm.getIdx()));
+                            }
+                            // vpbroadcastd(vmm_bcast, xmm_bcast);
+                            auto _bcast = ((i_ur % 2) == 0) ? vmm_bcast
+                                                            : vmm_bcast2;
+                            dup(ZRegS(_bcast.getIdx()),
+                                    ZRegS(xmm_bcast.getIdx())[0]);
+                        } else {
+                            if (i_ur == 0) {
+                                // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, i_ur, false));
+                                bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
+                            }
+                            if ((i_ur + 1) < ur) {
+                                ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast2
+                                                                : vmm_bcast;
+                                // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, (i_ur+1), false));
+                                bcast_ptr(_bcast, i_reduce, (i_ur + 1), false);
+                            }
+                        }
+                        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                            ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast
+                                                            : vmm_bcast2;
+                            compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
+                                    _bcast);
+                        }
+                    } else {
+                        if (last_block && ic_tail_size != 0
+                                && i_reduce == loop_unroll - reduce_step) {
+                            auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
+                            for (int r = 0; r < ic_tail_size; ++r) {
+                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                        (jcp.ic_without_padding * i_ur
+                                                + i_reduce + r),
+                                        reg_tmp0_imm);
+                                ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
+                                ins(VReg16B(xmm_bcast.getIdx())[r],
+                                        WReg(reg_tmp1_imm.getIdx()));
+                            }
+                            dup(ZRegS(vmm_bcast.getIdx()),
+                                    ZRegS(xmm_bcast.getIdx())[0]);
+                        } else {
+                            bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
+                        }
+                        xa_->add(vmm_bcast.b, vmm_bcast.b, vmm_shift.b);
+                        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                            compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
+                                    vmm_bcast);
+                        }
+                    }
+                }
+#if 1 // test
             }
+#endif
         }
     };
 
@@ -934,28 +1066,30 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
             str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
         }
 #else
-        if (!jcp.signed_input) {
-            if (jcp.with_bias) {
-                ldr(reg_bias_data,
-                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
-                add_imm(reg_bias_data, reg_bias_data,
-                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
+            if (!jcp.signed_input) {
+                if (jcp.with_bias) {
+                    ldr(reg_bias_data,
+                            SVE_compress_addr(reg_rsp, reg_bias_data_off));
+                    add_imm(reg_bias_data, reg_bias_data,
+                            load_loop_blk * jcp.load_block * jcp.typesize_bia,
+                            reg_tmp0_imm);
+                    str(reg_bias_data,
+                            SVE_compress_addr(reg_rsp, reg_bias_data_off));
+                }
+                ldr(reg_comp_data,
+                        SVE_compress_addr(reg_rsp, reg_comp_data_off));
+                add_imm(reg_comp_data, reg_comp_data,
+                        load_loop_blk * jcp.load_block * sizeof(int32_t),
                         reg_tmp0_imm);
-                str(reg_bias_data,
-                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
+                str(reg_comp_data,
+                        SVE_compress_addr(reg_rsp, reg_comp_data_off));
+            } else {
+                if (jcp.with_bias) {
+                    add_imm(reg_bias_data, reg_bias_data,
+                            load_loop_blk * jcp.load_block * jcp.typesize_bia,
+                            reg_tmp0_imm);
+                }
             }
-            ldr(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
-            add_imm(reg_comp_data, reg_comp_data,
-                    load_loop_blk * jcp.load_block * sizeof(int32_t),
-                    reg_tmp0_imm);
-            str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
-        } else {
-            if (jcp.with_bias) {
-                add_imm(reg_bias_data, reg_bias_data,
-                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
-                        reg_tmp0_imm);
-            }
-        }
 #endif
 #if 0
         if (jcp.src_zero_point) {
