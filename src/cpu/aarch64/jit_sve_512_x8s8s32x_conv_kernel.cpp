@@ -165,7 +165,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
             ld1w(vmm_pre_load.s, mask_all_one, Xbyak_aarch64::ptr(reg_addr));
         }
         /* add to accum: compensation, bias and permute */
-        {
+	{
             std::vector<Xbyak_aarch64::ZReg> zregs_aux;
             std::vector<Xbyak_aarch64::ZReg> zregs_to_avoid
                     = {vmm_comp, vmm_bias};
@@ -175,31 +175,46 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
 
             if (jcp.is_fast_depthwise) {
                 zregs_to_avoid.push_back(zmm_permute);
-                prepare_zregs_aux(zregs_aux, zregs_to_avoid, 3);
+                //prepare_zregs_aux(zregs_aux, zregs_to_avoid, 3);
+                prepare_zregs_aux(zregs_aux, zregs_to_avoid, 2);
             } else {
                 prepare_zregs_aux(zregs_aux, zregs_to_avoid, 1);
             }
-
             for (auto zreg : zregs_aux) {
-                xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
+    		    xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
                 xa_->str(zreg, Xbyak_aarch64::ptr(reg_stack));
             }
-
             for (int j = 0; j < ur_w; j++) {
                 auto vmm = vmm_out(j, k);
+#if 1
+                auto zmm_tmp3 = ZReg(31);
+    		    xa_->sub(reg_stack, reg_stack, 64);
+                str(zmm_tmp3, Xbyak_aarch64::ptr(reg_stack));
+#endif
 
                 if (jcp.is_fast_depthwise) {
                     auto zmm = zmm_out(j, k);
-                    xa_->mov(zregs_aux[0].s, 15);
+		xa_->mov(zregs_aux[0].s, 15);
                     xa_->and_(zregs_aux[0].b, mask_all_one, zmm_permute.b);
                     for (int i = 0; i < 16; i++) {
                         cmpeq(mask_tmp.s, mask_all_one, zregs_aux[0].s, i);
                         dup(zregs_aux[1].s, zmm.s[i]);
-                        xa_->mov(
+#if 0
+			xa_->mov(
                                 zregs_aux[2].s, mask_tmp / T_m, zregs_aux[1].s);
                     }
                     xa_->mov(zmm.d, zregs_aux[2].d);
-                }
+#else
+			xa_->mov(
+                                zmm_tmp3.s, mask_tmp / T_m, zregs_aux[1].s);
+                    }
+                    xa_->mov(zmm.d, zmm_tmp3.d);
+#endif
+		}
+#if 1
+		ldr(zmm_tmp3, Xbyak_aarch64::ptr(reg_stack));
+                xa_->add(reg_stack, reg_stack, 64);
+#endif
                 scvtf(vmm.s, mask_all_one, vmm.s);
                 if (!jcp.signed_input)
                     xa_->fsub(vmm.s, vmm.s, vmm_comp.s);
