@@ -124,7 +124,7 @@ private:
     XReg reg_tmp0_imm = x18; // tmp for add_imm
     XReg reg_tmp1_imm = x19; // tmp for add_imm
     XReg reg_tmp2_imm = x20; // tmp for add_imm
-    XReg reg_tmp3_imm = x22; // tmp for add_imm
+    XReg reg_tmp3_imm = x27; // tmp for add_imm
     XReg reg_tmp0_adr = x23; // tmp for address value
     XReg reg_tmp1_adr = x24; // tmp for address value
     XReg reg_tmp2_adr = x25; // tmp for address value
