@@ -46,8 +46,7 @@ void pick_loop_order(jit_conv_conf_t &jcp, int nthr) {
 }
 } // namespace
 
-bool jit_sve_512_x8s8s32x_fwd_kernel::maybe_eltwise(
-        int position) {
+bool jit_sve_512_x8s8s32x_fwd_kernel::maybe_eltwise(int position) {
     using namespace primitive_kind;
     const auto &p = attr_.post_ops_;
 
@@ -162,7 +161,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     const bool is_opt = idx <= 31 & jcp.is_oc_scale * oc_block == 0;
     ZReg _zregs_aux = ZReg(idx);
     if (is_opt && (!(jcp.is_fast_depthwise && !jcp.signed_input))) {
-        ld1w(_zregs_aux.s, mask_all_one, Xbyak_aarch64::ptr(get_comp_addr_reg(reg_ptr_scales, 0)));
+        ld1w(_zregs_aux.s, mask_all_one,
+                Xbyak_aarch64::ptr(get_comp_addr_reg(reg_ptr_scales, 0)));
     }
 
     for (int k = 0; k < nb_oc_block; k++) {
