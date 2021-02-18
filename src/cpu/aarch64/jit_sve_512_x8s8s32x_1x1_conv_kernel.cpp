@@ -709,53 +709,6 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 i_reduce += reduce_step) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load)
                 load_ptr(vreg_load(i_load), i_reduce, i_load);
-#if 0
-            if ((ur < 9) && (!jcp.signed_input)) {
-    		    if (ur > 3) {
-                    for (int zr = 0; zr < ur - 3; zr++) {
-                        xa_->sub(x22, x22, 64);
-                        str(ZReg(27 - zr), Xbyak_aarch64::ptr(x22));
-                    }
-                }
-                for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                    auto r_idx = (i_ur == 0) ? vmm_bcast.getIdx()
-                                             : vmm_bcast.getIdx() - 1 - i_ur;
-                    if (last_block && ic_tail_size != 0
-                            && i_reduce == loop_unroll - reduce_step) {
-                        auto xmm_bcast = VReg16B(r_idx);
-                        for (int r = 0; r < ic_tail_size; ++r) {
-                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                    (jcp.ic_without_padding * i_ur + i_reduce
-                                            + r),
-                                    reg_tmp0_imm);
-                            ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
-                            ins(VReg16B(xmm_bcast.getIdx())[r],
-                                    WReg(reg_tmp1_imm.getIdx()));
-                        }
-                        dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
-                    } else {
-                        auto xmm_bcast = ZReg(r_idx);
-                        bcast_ptr(xmm_bcast, i_reduce, i_ur, false);
-                    }
-                    xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
-                }
-                for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                    auto r_idx = (i_ur == 0) ? vmm_bcast.getIdx()
-                                             : vmm_bcast.getIdx() - 1 - i_ur;
-                    auto xmm_bcast = ZReg(r_idx);
-                    for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                        compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
-                                xmm_bcast);
-                    }
-                }
-		if (ur > 3) {
-                    for (int zr = 0; zr < ur - 3; zr++) {
-                        ldr(ZReg(27 - zr), Xbyak_aarch64::ptr(x22));
-                        xa_->add(x22, x22, 64);
-                    }
-                }
-#endif
             if (!jcp.signed_input) {
                 int lpn = ur / 3;
                 int adj = ur % 3;
@@ -905,9 +858,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         }
                     }
                 }
-#if 1 // test
             }
-#endif
         }
     };
 

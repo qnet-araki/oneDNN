@@ -249,10 +249,6 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
 
         /* Do post-ops */
         if (p_sum_scale) { // post_op: sum
-#if 0
-   	xa_->sub(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
-        xa_->str(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
-#endif
             for (int k = 0; k < nb_oc_block; k++) {
                 const bool mask_flag = last_oc_block_flag
                         && k == nb_oc_block - 1 && mask_gflag;
@@ -273,10 +269,6 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                     }
                 }
             }
-#if 0
-	xa_->ldr(vmm_tmp, Xbyak_aarch64::ptr(reg_stack));
-        xa_->add(reg_stack, reg_stack, cpu_isa_traits<sve_512>::vlen);
-#endif
         }
 
         // Properly saturate the accumulators for integer datatypes
