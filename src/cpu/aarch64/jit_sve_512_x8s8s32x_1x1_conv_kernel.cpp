@@ -1040,30 +1040,28 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
             str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
         }
 #else
-            if (!jcp.signed_input) {
-                if (jcp.with_bias) {
-                    ldr(reg_bias_data,
-                            SVE_compress_addr(reg_rsp, reg_bias_data_off));
-                    add_imm(reg_bias_data, reg_bias_data,
-                            load_loop_blk * jcp.load_block * jcp.typesize_bia,
-                            reg_tmp0_imm);
-                    str(reg_bias_data,
-                            SVE_compress_addr(reg_rsp, reg_bias_data_off));
-                }
-                ldr(reg_comp_data,
-                        SVE_compress_addr(reg_rsp, reg_comp_data_off));
-                add_imm(reg_comp_data, reg_comp_data,
-                        load_loop_blk * jcp.load_block * sizeof(int32_t),
+        if (!jcp.signed_input) {
+            if (jcp.with_bias) {
+                ldr(reg_bias_data,
+                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
+                add_imm(reg_bias_data, reg_bias_data,
+                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
                         reg_tmp0_imm);
-                str(reg_comp_data,
-                        SVE_compress_addr(reg_rsp, reg_comp_data_off));
-            } else {
-                if (jcp.with_bias) {
-                    add_imm(reg_bias_data, reg_bias_data,
-                            load_loop_blk * jcp.load_block * jcp.typesize_bia,
-                            reg_tmp0_imm);
-                }
+                str(reg_bias_data,
+                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
             }
+            ldr(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
+            add_imm(reg_comp_data, reg_comp_data,
+                    load_loop_blk * jcp.load_block * sizeof(int32_t),
+                    reg_tmp0_imm);
+            str(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
+        } else {
+            if (jcp.with_bias) {
+                add_imm(reg_bias_data, reg_bias_data,
+                        load_loop_blk * jcp.load_block * jcp.typesize_bia,
+                        reg_tmp0_imm);
+            }
+        }
 #endif
 #if 0
         if (jcp.src_zero_point) {
