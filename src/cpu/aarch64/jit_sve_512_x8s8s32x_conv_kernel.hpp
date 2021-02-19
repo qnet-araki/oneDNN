@@ -21,6 +21,7 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/aarch64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/aarch64/jit_generator.hpp"
 #include "cpu/aarch64/jit_primitive_conf.hpp"
 
@@ -38,8 +39,10 @@ struct jit_sve_512_x8s8s32x_fwd_kernel : public jit_generator {
 
     jit_sve_512_x8s8s32x_fwd_kernel(
             const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
-        : jcp(ajcp), attr_(attr) {
-        if (jcp.with_eltwise) assert(!"not supported");
+        : jcp(ajcp), attr_(attr), eltwise_injector_(nullptr) {
+        if (jcp.with_eltwise)
+            eltwise_injector_ = new jit_uni_eltwise_injector_f32<avx512_common>(
+                    this, jcp.eltwise);
 
         int ch_block = jcp.is_depthwise ? jcp.ch_block : jcp.ic_block;
         if (ch_block == 16)
@@ -52,7 +55,7 @@ struct jit_sve_512_x8s8s32x_fwd_kernel : public jit_generator {
             assert(!"unreachable");
     }
 
-    ~jit_sve_512_x8s8s32x_fwd_kernel() {}
+    ~jit_sve_512_x8s8s32x_fwd_kernel() { delete eltwise_injector_; }
 
     jit_conv_conf_t jcp;
     const primitive_attr_t &attr_;
@@ -66,6 +69,7 @@ struct jit_sve_512_x8s8s32x_fwd_kernel : public jit_generator {
 
 private:
     size_t sve_len_;
+    jit_uni_eltwise_injector_f32<avx512_common> *eltwise_injector_;
     const int ic_sub_step = 4;
 
     enum {
@@ -102,7 +106,7 @@ private:
 
     /* counter regs */
     const XReg reg_bias_alpha = x1;
-    const XReg reg_param1 = x0;
+    const XReg reg_param1 = x5;
     const XReg reg_oi = x3;
     const XReg reg_bias = x2;
     const XReg reg_oc_blocks = x6;
@@ -114,19 +118,19 @@ private:
     const XReg reg_icb = reg_bias;
     const XReg reg_jmp_tbl_base = reg_kj;
 
-    XReg reg_stack = x22; // translator stack register
+    XReg reg_stack = x21; // translator stack register
 
     /* Temporay registers */
     XReg reg_tmp0_imm = x18; // tmp for add_imm
     XReg reg_tmp1_imm = x19; // tmp for add_imm
     XReg reg_tmp2_imm = x20; // tmp for add_imm
-    XReg reg_tmp3_imm = x21; // tmp for add_imm
+    XReg reg_tmp3_imm = x27; // tmp for add_imm
     XReg reg_tmp0_adr = x23; // tmp for address value
     XReg reg_tmp1_adr = x24; // tmp for address value
     XReg reg_tmp2_adr = x25; // tmp for address value
     XReg reg_tmp3_adr = x26; // tmp for address value
 
-    const PReg ktail_mask = p2;
+    const PReg ktail_mask = p5;
     const PReg kblend_mask = p8;
 
     const PReg mask_tmp = p3;
@@ -238,12 +242,14 @@ private:
                                 jcp.stride_w));
     }
 
+    bool maybe_eltwise(int position);
     void prepare_output(int ur_w);
     void store_output(int ur_w, bool last_oc_block_flag);
     void compute_ker_dw(int ur_w, int pad_l, int pad_r,
             ic_block_t last_ic_block_flag, bool h_padded);
     void compute_ker(int ur_w, int pad_l, int pad_r,
             ic_block_t last_ic_block_flag, bool h_padded = false);
+    void compute_eltwise(int ur_w);
     void kh_loop(int ur_w, int pad_l, int pad_r, ic_block_t last_ic_block_flag);
     void icb_loop(int ur_w, int pad_l, int pad_r, bool is_last_spatial_block);
     void generate() override;

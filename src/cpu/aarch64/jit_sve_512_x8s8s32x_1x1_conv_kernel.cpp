@@ -44,6 +44,22 @@ using namespace dnnl::impl::data_type;
     Xbyak_aarch64::ptr(get_comp_addr_reg(base, offt))
 
 template <typename Vmm>
+bool _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::maybe_eltwise(int position) {
+    using namespace primitive_kind;
+    const auto &p = attr_.post_ops_;
+
+    if (position == 0) {
+        /* eltwise before sum */
+        return p.contain(eltwise, 0);
+    } else if (position == 1) {
+        /* eltwise after sum */
+        return p.contain(sum, 0) && p.contain(eltwise, 1);
+    }
+
+    return false;
+}
+
+template <typename Vmm>
 void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::bcast_loop(int load_loop_blk) {
     xa_->mov(aux1_reg_bcast_data, reg_bcast_data);
     xa_->mov(aux_reg_bcast_data, reg_bcast_data);
@@ -427,6 +443,9 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
             }
         }
 
+        if (maybe_eltwise(0))
+            eltwise_injector_->compute_vector_range(0, ur * load_loop_blk);
+
         if (p_sum_scale) { // post_op: sum
             for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
                 const bool mask_flag
@@ -533,6 +552,9 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 }
             }
         }
+
+        if (maybe_eltwise(1))
+            eltwise_injector_->compute_vector_range(0, ur * load_loop_blk);
 
 #if 0
         if (jcp.dst_zero_point) {
@@ -935,6 +957,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
     // vpbroadcastw(vmm_one, _t);
     dup(vmm_one.h, 0x1);
 
+    xa_->mov(reg_abi_param1, abi_param1);
     xa_->mov(reg_rsp, xa_->sp);
     subs(reg_rsp, reg_rsp, stack_space_needed);
 
@@ -1129,6 +1152,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
     add_imm(reg_rsp, reg_rsp, stack_space_needed, reg_tmp0_imm);
 
     postamble();
+
+    if (jcp.with_eltwise) eltwise_injector_->prepare_table();
 }
 
 bool jit_sve_512_x8s8s32x_1x1_conv_kernel::post_ops_ok(
@@ -1136,6 +1161,7 @@ bool jit_sve_512_x8s8s32x_1x1_conv_kernel::post_ops_ok(
     using namespace primitive_kind;
     const auto &p = attr.post_ops_;
 
+    auto is_eltwise = [&](int idx) { return p.entry_[idx].is_eltwise(); };
     auto is_convolution
             = [&](int idx) { return p.entry_[idx].is_convolution(); };
 
@@ -1144,6 +1170,11 @@ bool jit_sve_512_x8s8s32x_1x1_conv_kernel::post_ops_ok(
 
     switch (len) {
         case 0: return true;
+        case 1: return is_eltwise(0) || p.contain(sum, 0) || is_convolution(0);
+        case 2:
+            return (p.contain(sum, 0) && is_eltwise(1))
+                    || (p.contain(sum, 1) && is_eltwise(0))
+                    || (is_eltwise(0) && is_convolution(1));
         default: return false;
     }
 
@@ -1223,6 +1254,13 @@ status_t jit_sve_512_x8s8s32x_1x1_conv_kernel::init_conf(
     jcp.with_dw_conv = dw_conv_ind != -1;
     // Using dw_conv_ind as upper-bound below, as post-ops after it will be
     // handled in depthwise convolution.
+    const int eltwise_ind = p.find(primitive_kind::eltwise, 0, dw_conv_ind);
+    jcp.with_eltwise = eltwise_ind != -1;
+    if (jcp.with_eltwise) {
+        jcp.eltwise = p.entry_[eltwise_ind].eltwise;
+        if (jcp.eltwise.alg == alg_kind::eltwise_pow)
+            return status::unimplemented;
+    }
 
 #if 0
     const auto zp = attr.zero_points_;

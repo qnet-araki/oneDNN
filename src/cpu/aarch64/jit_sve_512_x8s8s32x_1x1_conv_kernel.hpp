@@ -21,6 +21,7 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/aarch64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/aarch64/jit_generator.hpp"
 #include "cpu/aarch64/jit_primitive_conf.hpp"
 
@@ -36,16 +37,25 @@ struct _jit_sve_512_x8s8s32x_1x1_conv_kernel : public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(_jit_sve_512_x8s8s32x_1x1_conv_fwd_ker_t)
     _jit_sve_512_x8s8s32x_1x1_conv_kernel(
             const jit_1x1_conv_conf_t &ajcp, const primitive_attr_t &attr)
-        : jit_generator(nullptr, 1024 * 1024), jcp(ajcp), attr_(attr) {
-        if (jcp.with_eltwise) assert(!"not supported");
+        : jit_generator(nullptr, 1024 * 1024)
+        , jcp(ajcp)
+        , attr_(attr)
+        , eltwise_injector_(nullptr) {
+        if (jcp.with_eltwise) {
+            eltwise_injector_ = new jit_uni_eltwise_injector_f32<avx512_common>(
+                    this, jcp.eltwise);
+        }
     }
 
-    ~_jit_sve_512_x8s8s32x_1x1_conv_kernel() {}
+    ~_jit_sve_512_x8s8s32x_1x1_conv_kernel() { delete eltwise_injector_; }
 
+    bool maybe_eltwise(int position);
     jit_1x1_conv_conf_t jcp;
     const primitive_attr_t &attr_;
 
 private:
+    jit_uni_eltwise_injector_f32<avx512_common> *eltwise_injector_;
+
     using reg64_t = const XReg;
     using zmm_t = const ZReg;
     using mask_t = const PReg;
@@ -70,16 +80,16 @@ private:
     const XReg reg_bcast_loop_work = x3; //rbx;
     const XReg bcast_loop_iter = x2; //rdx; // Note: Fix me
     const XReg reg_load_loop_work = x6; //rsi;
-    const XReg reg_rsp = x4; //rsp;
+    const XReg reg_rsp = x21; //rsp;
     const XReg aux_reg_output_data = x1; //abi_not_param1;
-    const XReg reduce_loop_iter = x0; //abi_param1;
-    const XReg reg_abi_param1 = x0; // abi_param1
+    const XReg reduce_loop_iter = x5; //abi_param1;
+    const XReg reg_abi_param1 = x5; // abi_param1
     // zero-point computation
     const XReg reg_zp_compensation = aux_reg_load_data; // x15
     const XReg reg_src_zero_point = aux_reg_bcast_data; // x14
     const XReg reg_dst_zero_point = reg_src_zero_point;
 
-    const PReg ktail_load_mask = p2;
+    const PReg ktail_load_mask = p5;
     const PReg ktail_mask = p3;
     const PReg vmask = p4;
     const PReg mask_tmp = p8;
@@ -89,7 +99,7 @@ private:
     const XReg reg_tmp0_imm = x18; // tmp for add_imm
     const XReg reg_tmp1_imm = x19; // tmp for add_imm
     const XReg reg_tmp2_imm = x20; // tmp for add_imm
-    const XReg reg_tmp3_imm = x21; // tmp for add_imm
+    const XReg reg_tmp3_imm = x27; // tmp for add_imm
     const XReg reg_tmp0_adr = x23; // tmp for address value
     const XReg reg_tmp1_adr = x24; // tmp for address value
     const XReg reg_tmp2_adr = x25; // tmp for address value
