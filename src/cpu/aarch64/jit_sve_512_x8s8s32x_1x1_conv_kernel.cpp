@@ -731,6 +731,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 i_reduce += reduce_step) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load)
                 load_ptr(vreg_load(i_load), i_reduce, i_load);
+#if 0
             if (!jcp.signed_input) {
                 int lpn = ur / 3;
                 int adj = ur % 3;
@@ -813,7 +814,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                     }
                 }
             } else {
-                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+#endif
+    		    for (int i_ur = 0; i_ur < ur; ++i_ur) {
                     if (jcp.signed_input) {
                         if (last_block && ic_tail_size != 0
                                 && i_reduce == loop_unroll - reduce_step) {
@@ -880,7 +882,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         }
                     }
                 }
-            }
+//            }
         }
     };
 
@@ -1020,7 +1022,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
         bcast_loop(load_loop_blk);
         add_imm(reg_load_data, reg_load_data,
                 load_loop_blk * jcp.load_loop_load_step, reg_tmp0_imm);
-#if 0
+#if 1
 	if (jcp.with_bias) {
             if (!jcp.signed_input)
                 ldr(reg_bias_data,
