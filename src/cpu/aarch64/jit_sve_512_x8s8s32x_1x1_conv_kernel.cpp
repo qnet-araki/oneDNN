@@ -359,11 +359,11 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         break;
 #else
                     case data_type::s8:
-                        bias_ptr8(ZReg(17), i_load, mask_flag);
-                        zip1(ZRegB(17), ZRegB(17), ZRegB(17));
-                        zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                        bias_ptr8(ZReg(27), i_load, mask_flag);
+                        zip1(ZRegB(27), ZRegB(27), ZRegB(27));
+                        zip1(ZRegH(27), ZRegH(27), ZRegH(27));
                         sxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                                vmask / Xbyak_aarch64::T_m, ZRegS(27));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                             xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
@@ -371,11 +371,11 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         }
                         break;
                     case data_type::u8:
-                        bias_ptr8(ZReg(17), i_load, mask_flag);
-                        zip1(ZRegB(17), ZRegB(17), ZRegB(17));
-                        zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                        bias_ptr8(ZReg(27), i_load, mask_flag);
+                        zip1(ZRegB(27), ZRegB(27), ZRegB(27));
+                        zip1(ZRegH(27), ZRegH(27), ZRegH(27));
                         uxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                                vmask / Xbyak_aarch64::T_m, ZRegS(27));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                             xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
@@ -497,11 +497,11 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                             break;
 #else
                         case data_type::s8:
-                            output_ptr8(ZReg(17), i_load, i_ur, mask_flag);
-                            zip1(ZRegB(17), ZRegB(17), ZRegB(17));
-                            zip1(ZRegH(17), ZRegH(17), ZRegH(17));
+                            output_ptr8(ZReg(27), i_load, i_ur, mask_flag);
+                            zip1(ZRegB(27), ZRegB(27), ZRegB(27));
+                            zip1(ZRegH(27), ZRegH(27), ZRegH(27));
                             sxtb(ZRegS(vmm_prev_dst.getIdx()),
-                                    vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                                    vmask / Xbyak_aarch64::T_m, ZRegS(27));
                             if (mask_flag) {
                                 xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                                 xa_->mov(vmm_prev_dst.s,
@@ -509,11 +509,11 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                             }
                             break;
                         case data_type::u8:
-                            output_ptr8(ZReg(17), i_load, i_ur, mask_flag);
-                            zip1(ZRegB(17), ZRegB(17), ZRegB(17));
-                            zip1(ZRegH(17), ZRegH(17), ZRegH(18));
+                            output_ptr8(ZReg(27), i_load, i_ur, mask_flag);
+                            zip1(ZRegB(27), ZRegB(27), ZRegB(27));
+                            zip1(ZRegH(27), ZRegH(27), ZRegH(27));
                             uxtb(ZRegS(vmm_prev_dst.getIdx()),
-                                    vmask / Xbyak_aarch64::T_m, ZRegS(17));
+                                    vmask / Xbyak_aarch64::T_m, ZRegS(27));
                             if (mask_flag) {
                                 xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                                 xa_->mov(vmm_prev_dst.s,
@@ -543,10 +543,10 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
                         xa_->add(x22, x22, 64);
 #else
-                        ld1rw(ZRegS(17), vmask / Xbyak_aarch64::T_z,
+                        ld1rw(ZRegS(27), vmask / Xbyak_aarch64::T_z,
                                 Xbyak_aarch64::ptr(reg_ptr_sum_scale));
                         fmla(r.s, vmask / Xbyak_aarch64::T_m, vmm_prev_dst.s,
-                                ZRegS(17));
+                                ZRegS(27));
 #endif
                     }
                 }
