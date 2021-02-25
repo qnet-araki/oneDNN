@@ -731,91 +731,94 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 i_reduce += reduce_step) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load)
                 load_ptr(vreg_load(i_load), i_reduce, i_load);
-#if 0
-            if (!jcp.signed_input) {
-                int lpn = ur / 3;
-                int adj = ur % 3;
-                int lp = 0;
+#if 1
+            if ((!jcp.signed_input) && (load_loop_blk < 3)) {
+                int reg_n = 2;
+                int lpn = ur / reg_n;
+                int adj = ur % reg_n;
+                int r_ofs = 0;
                 if (lpn != 0) {
                     for (int lp1 = 0; lp1 < lpn; ++lp1) {
-                        for (int lp2 = 0; lp2 < 3; ++lp2) {
-                            auto r_idx = (lp2 == 0)
-                                    ? vmm_bcast.getIdx()
-                                    : vmm_bcast.getIdx() - 1 - lp2;
+                        for (int lp2 = 0; lp2 < reg_n; ++lp2) {
+                            r_ofs = (lp2 == 0) ? 0 : 1;
                             if (last_block && ic_tail_size != 0
                                     && i_reduce == loop_unroll - reduce_step) {
-                                auto xmm_bcast = VReg16B(r_idx);
                                 for (int r = 0; r < ic_tail_size; ++r) {
                                     add_imm(reg_tmp0_adr, aux_reg_bcast_data,
                                             (jcp.ic_without_padding
-                                                            * (lp1 * 3 + lp2)
+                                                            * (lp1 * reg_n
+                                                                    + lp2)
                                                     + i_reduce + r),
                                             reg_tmp0_imm);
                                     ldrb(WReg(reg_tmp1_imm.getIdx()),
                                             Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                    ins(VReg16B(xmm_bcast.getIdx())[r],
+                                    ins(VReg16B(vmm_bcast.getIdx() - r_ofs
+                                                - lp2)[r],
                                             WReg(reg_tmp1_imm.getIdx()));
                                 }
-                                dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
+                                dup(ZRegS(vmm_bcast.getIdx() - r_ofs - lp2),
+                                        ZRegS(vmm_bcast.getIdx() - r_ofs
+                                                - lp2)[0]);
                             } else {
-                                auto xmm_bcast = ZReg(r_idx);
-                                bcast_ptr(xmm_bcast, i_reduce, lp1 * 3 + lp2,
-                                        false);
+                                bcast_ptr(
+                                        ZReg(vmm_bcast.getIdx() - r_ofs - lp2),
+                                        i_reduce, lp1 * reg_n + lp2, false);
                             }
-                            xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
                         }
-                        for (int lp2 = 0; lp2 < 3; ++lp2) {
-                            auto r_idx = (lp2 == 0)
-                                    ? vmm_bcast.getIdx()
-                                    : vmm_bcast.getIdx() - 1 - lp2;
-                            auto xmm_bcast = ZReg(r_idx);
+                        for (int lp2 = 0; lp2 < reg_n; ++lp2) {
+                            r_ofs = (lp2 == 0) ? 0 : 1;
+                            xa_->add(ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
+                                    ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
+                                    vmm_shift.b);
                             for (int i_load = 0; i_load < load_loop_blk;
                                     ++i_load) {
-                                compute(vreg_accum(i_load, lp1 * 3 + lp2),
-                                        vreg_load(i_load), xmm_bcast);
+                                compute(vreg_accum(i_load, lp1 * reg_n + lp2),
+                                        vreg_load(i_load),
+                                        ZReg(vmm_bcast.getIdx() - r_ofs - lp2));
                             }
                         }
                     }
                 }
                 if (adj != 0) {
                     for (int lp2 = 0; lp2 < adj; ++lp2) {
-                        auto r_idx = (lp2 == 0) ? vmm_bcast.getIdx()
-                                                : vmm_bcast.getIdx() - 1 - lp2;
+                        r_ofs = (lp2 == 0) ? 0 : 1;
                         if (last_block && ic_tail_size != 0
                                 && i_reduce == loop_unroll - reduce_step) {
-                            auto xmm_bcast = VReg16B(r_idx);
+                            //auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
                             for (int r = 0; r < ic_tail_size; ++r) {
                                 add_imm(reg_tmp0_adr, aux_reg_bcast_data,
                                         (jcp.ic_without_padding
-                                                        * (lpn * 3 + lp2)
+                                                        * (lpn * reg_n + lp2)
                                                 + i_reduce + r),
                                         reg_tmp0_imm);
                                 ldrb(WReg(reg_tmp1_imm.getIdx()),
                                         Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                ins(VReg16B(xmm_bcast.getIdx())[r],
+                                ins(VReg16B(vmm_bcast.getIdx() - r_ofs
+                                            - lp2)[r],
                                         WReg(reg_tmp1_imm.getIdx()));
                             }
-                            dup(ZRegS(r_idx), ZRegS(r_idx)[0]);
+                            dup(ZRegS(vmm_bcast.getIdx() - r_ofs - lp2),
+                                    ZRegS(vmm_bcast.getIdx() - r_ofs - lp2)[0]);
                         } else {
-                            auto xmm_bcast = ZReg(r_idx);
-                            bcast_ptr(
-                                    xmm_bcast, i_reduce, lpn * 3 + lp2, false);
+                            bcast_ptr(ZReg(vmm_bcast.getIdx() - r_ofs - lp2),
+                                    i_reduce, lpn * reg_n + lp2, false);
                         }
-                        xa_->add(ZReg(r_idx).b, ZReg(r_idx).b, vmm_shift.b);
                     }
                     for (int lp2 = 0; lp2 < adj; ++lp2) {
-                        auto r_idx = (lp2 == 0) ? vmm_bcast.getIdx()
-                                                : vmm_bcast.getIdx() - 1 - lp2;
-                        auto xmm_bcast = ZReg(r_idx);
+                        r_ofs = (lp2 == 0) ? 0 : 1;
+                        xa_->add(ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
+                                ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
+                                vmm_shift.b);
                         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                            compute(vreg_accum(i_load, lpn * 3 + lp2),
-                                    vreg_load(i_load), xmm_bcast);
+                            compute(vreg_accum(i_load, lpn * reg_n + lp2),
+                                    vreg_load(i_load),
+                                    ZReg(vmm_bcast.getIdx() - r_ofs - lp2));
                         }
                     }
                 }
             } else {
 #endif
-    		    for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
                     if (jcp.signed_input) {
                         if (last_block && ic_tail_size != 0
                                 && i_reduce == loop_unroll - reduce_step) {
@@ -882,7 +885,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         }
                     }
                 }
-//            }
+            }
         }
     };
 
@@ -942,7 +945,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
     } else {
         store(false);
     }
-}
+} // namespace aarch64
 
 template <typename Vmm>
 void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
@@ -1023,7 +1026,7 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
         add_imm(reg_load_data, reg_load_data,
                 load_loop_blk * jcp.load_loop_load_step, reg_tmp0_imm);
 #if 1
-	if (jcp.with_bias) {
+        if (jcp.with_bias) {
             if (!jcp.signed_input)
                 ldr(reg_bias_data,
                         SVE_compress_addr(reg_rsp, reg_bias_data_off));
