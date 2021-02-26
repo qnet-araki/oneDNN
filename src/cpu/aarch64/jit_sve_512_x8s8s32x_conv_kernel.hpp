@@ -141,7 +141,8 @@ private:
     /* used during bias section of store_output */
     const ZReg vmm_comp = ZReg(30); // only for unsigned input
     const ZReg vmm_bias = ZReg(31);
-    const ZReg vmm_pre_load = ZReg(30); // only for signed input
+    const ZReg vmm_pre_load = ZReg(30);
+    const ZReg vmm_cvt_tmp = ZReg(30);
     /* used during post_op sum section of store_output */
     const ZReg vmm_prev_dst = ZReg(31);
     /* used during write-out section of store_output */
