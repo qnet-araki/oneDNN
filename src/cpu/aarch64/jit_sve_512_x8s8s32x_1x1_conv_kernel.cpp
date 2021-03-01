@@ -768,157 +768,150 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 i_reduce += reduce_step) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load)
                 load_ptr(vreg_load(i_load), i_reduce, i_load);
-#if 1
-            if ((!jcp.signed_input) && (load_loop_blk < 3)) {
-                int reg_n = 2;
-                int lpn = ur / reg_n;
-                int adj = ur % reg_n;
-                int r_ofs = 0;
-                if (lpn != 0) {
-                    for (int lp1 = 0; lp1 < lpn; ++lp1) {
-                        for (int lp2 = 0; lp2 < reg_n; ++lp2) {
-                            r_ofs = (lp2 == 0) ? 0 : 1;
-                            if (last_block && ic_tail_size != 0
-                                    && i_reduce == loop_unroll - reduce_step) {
-                                for (int r = 0; r < ic_tail_size; ++r) {
-                                    add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                            (jcp.ic_without_padding
-                                                            * (lp1 * reg_n
-                                                                    + lp2)
-                                                    + i_reduce + r),
-                                            reg_tmp0_imm);
-                                    ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                            Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                    ins(VReg16B(vmm_bcast.getIdx() - r_ofs
-                                                - lp2)[r],
-                                            WReg(reg_tmp1_imm.getIdx()));
-                                }
-                                dup(ZRegS(vmm_bcast.getIdx() - r_ofs - lp2),
-                                        ZRegS(vmm_bcast.getIdx() - r_ofs
-                                                - lp2)[0]);
-                            } else {
-                                bcast_ptr(
-                                        ZReg(vmm_bcast.getIdx() - r_ofs - lp2),
-                                        i_reduce, lp1 * reg_n + lp2, false);
-                            }
+            if (jcp.signed_input) {
+                for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                    if (last_block && ic_tail_size != 0
+                            && i_reduce == loop_unroll - reduce_step) {
+                        auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
+                        // load_bytes(xmm_bcast, aux_reg_bcast_data,
+                        //         jcp.ic_without_padding * i_ur + i_reduce,
+                        //         ic_tail_size);
+                        for (int r = 0; r < ic_tail_size; ++r) {
+                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                    (jcp.ic_without_padding * i_ur + i_reduce
+                                            + r),
+                                    reg_tmp0_imm);
+                            ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
+                            ins(VReg16B(xmm_bcast.getIdx())[r],
+                                    WReg(reg_tmp1_imm.getIdx()));
                         }
-                        for (int lp2 = 0; lp2 < reg_n; ++lp2) {
-                            r_ofs = (lp2 == 0) ? 0 : 1;
-                            xa_->add(ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
-                                    ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
-                                    vmm_shift.b);
-                            for (int i_load = 0; i_load < load_loop_blk;
-                                    ++i_load) {
-                                compute(vreg_accum(i_load, lp1 * reg_n + lp2),
-                                        vreg_load(i_load),
-                                        ZReg(vmm_bcast.getIdx() - r_ofs - lp2));
-                            }
+                        // vpbroadcastd(vmm_bcast, xmm_bcast);
+                        auto _bcast
+                                = ((i_ur % 2) == 0) ? vmm_bcast : vmm_bcast2;
+                        dup(ZRegS(_bcast.getIdx()),
+                                ZRegS(xmm_bcast.getIdx())[0]);
+                    } else {
+                        if (i_ur == 0) {
+                            // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, i_ur, false));
+                            bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
+                        }
+                        if ((i_ur + 1) < ur) {
+                            ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast2
+                                                            : vmm_bcast;
+                            // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, (i_ur+1), false));
+                            bcast_ptr(_bcast, i_reduce, (i_ur + 1), false);
                         }
                     }
-                }
-                if (adj != 0) {
-                    for (int lp2 = 0; lp2 < adj; ++lp2) {
-                        r_ofs = (lp2 == 0) ? 0 : 1;
-                        if (last_block && ic_tail_size != 0
-                                && i_reduce == loop_unroll - reduce_step) {
-                            //auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
-                            for (int r = 0; r < ic_tail_size; ++r) {
-                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                        (jcp.ic_without_padding
-                                                        * (lpn * reg_n + lp2)
-                                                + i_reduce + r),
-                                        reg_tmp0_imm);
-                                ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                ins(VReg16B(vmm_bcast.getIdx() - r_ofs
-                                            - lp2)[r],
-                                        WReg(reg_tmp1_imm.getIdx()));
-                            }
-                            dup(ZRegS(vmm_bcast.getIdx() - r_ofs - lp2),
-                                    ZRegS(vmm_bcast.getIdx() - r_ofs - lp2)[0]);
-                        } else {
-                            bcast_ptr(ZReg(vmm_bcast.getIdx() - r_ofs - lp2),
-                                    i_reduce, lpn * reg_n + lp2, false);
-                        }
-                    }
-                    for (int lp2 = 0; lp2 < adj; ++lp2) {
-                        r_ofs = (lp2 == 0) ? 0 : 1;
-                        xa_->add(ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
-                                ZReg(vmm_bcast.getIdx() - r_ofs - lp2).b,
-                                vmm_shift.b);
-                        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                            compute(vreg_accum(i_load, lpn * reg_n + lp2),
-                                    vreg_load(i_load),
-                                    ZReg(vmm_bcast.getIdx() - r_ofs - lp2));
-                        }
+                    for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                        ZReg _bcast
+                                = ((i_ur % 2) == 0) ? vmm_bcast : vmm_bcast2;
+                        compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
+                                _bcast);
                     }
                 }
             } else {
-#endif
-                for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                    if (jcp.signed_input) {
-                        if (last_block && ic_tail_size != 0
-                                && i_reduce == loop_unroll - reduce_step) {
-                            auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
-                            // load_bytes(xmm_bcast, aux_reg_bcast_data,
-                            //         jcp.ic_without_padding * i_ur + i_reduce,
-                            //         ic_tail_size);
-                            for (int r = 0; r < ic_tail_size; ++r) {
-                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                        (jcp.ic_without_padding * i_ur
-                                                + i_reduce + r),
-                                        reg_tmp0_imm);
-                                ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                ins(VReg16B(xmm_bcast.getIdx())[r],
-                                        WReg(reg_tmp1_imm.getIdx()));
-                            }
-                            // vpbroadcastd(vmm_bcast, xmm_bcast);
-                            auto _bcast = ((i_ur % 2) == 0) ? vmm_bcast
-                                                            : vmm_bcast2;
-                            dup(ZRegS(_bcast.getIdx()),
-                                    ZRegS(xmm_bcast.getIdx())[0]);
-                        } else {
-                            if (i_ur == 0) {
-                                // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, i_ur, false));
-                                bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
-                            }
-                            if ((i_ur + 1) < ur) {
-                                ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast2
-                                                                : vmm_bcast;
-                                // vpbroadcastd(vmm_bcast, bcast_ptr(i_reduce, (i_ur+1), false));
-                                bcast_ptr(_bcast, i_reduce, (i_ur + 1), false);
-                            }
+                bool is_opt = false;
+                switch (ur) {
+                    case 6:
+                        is_opt = vreg_load(load_loop_blk - 1).getIdx() <= 27;
+                        break;
+                    case 7:
+                        is_opt = vreg_load(load_loop_blk - 1).getIdx() <= 23;
+                        break;
+                    case 8:
+                        is_opt = vreg_load(load_loop_blk - 1).getIdx() <= 26;
+                        break;
+                    default: is_opt = false; break;
+                }
+                if (last_block && ic_tail_size != 0
+                        && i_reduce == loop_unroll - reduce_step) {
+                    for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                        auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
+                        for (int r = 0; r < ic_tail_size; ++r) {
+                            add_imm(reg_tmp0_adr, aux_reg_bcast_data,
+                                    (jcp.ic_without_padding * i_ur + i_reduce
+                                            + r),
+                                    reg_tmp0_imm);
+                            ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                    Xbyak_aarch64::ptr(reg_tmp0_adr));
+                            ins(VReg16B(xmm_bcast.getIdx())[r],
+                                    WReg(reg_tmp1_imm.getIdx()));
                         }
-                        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                            ZReg _bcast = ((i_ur % 2) == 0) ? vmm_bcast
-                                                            : vmm_bcast2;
-                            compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
-                                    _bcast);
-                        }
-                    } else {
-                        if (last_block && ic_tail_size != 0
-                                && i_reduce == loop_unroll - reduce_step) {
-                            auto xmm_bcast = VReg16B(vmm_bcast.getIdx());
-                            for (int r = 0; r < ic_tail_size; ++r) {
-                                add_imm(reg_tmp0_adr, aux_reg_bcast_data,
-                                        (jcp.ic_without_padding * i_ur
-                                                + i_reduce + r),
-                                        reg_tmp0_imm);
-                                ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                ins(VReg16B(xmm_bcast.getIdx())[r],
-                                        WReg(reg_tmp1_imm.getIdx()));
-                            }
-                            dup(ZRegS(vmm_bcast.getIdx()),
-                                    ZRegS(xmm_bcast.getIdx())[0]);
-                        } else {
-                            bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
-                        }
+                        dup(ZRegS(vmm_bcast.getIdx()),
+                                ZRegS(xmm_bcast.getIdx())[0]);
                         xa_->add(vmm_bcast.b, vmm_bcast.b, vmm_shift.b);
                         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
                             compute(vreg_accum(i_load, i_ur), vreg_load(i_load),
                                     vmm_bcast);
+                        }
+                    }
+                } else {
+                    if (is_opt) {
+                        int reg_idx = vreg_load(load_loop_blk - 1).getIdx();
+                        if (ur == 7) {
+                            for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                                auto zmm_bcast = (i_ur == 0)
+                                        ? vmm_bcast
+                                        : ZReg(reg_idx + i_ur);
+                                bcast_ptr(zmm_bcast, i_reduce, i_ur, false);
+                            }
+                            for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                                auto zmm_bcast = (i_ur == 0)
+                                        ? vmm_bcast
+                                        : ZReg(reg_idx + i_ur);
+                                xa_->add(zmm_bcast.b, zmm_bcast.b, vmm_shift.b);
+                            }
+                            for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                                auto zmm_bcast = (i_ur == 0)
+                                        ? vmm_bcast
+                                        : ZReg(reg_idx + i_ur);
+                                for (int i_load = 0; i_load < load_loop_blk;
+                                        ++i_load) {
+                                    compute(vreg_accum(i_load, i_ur),
+                                            vreg_load(i_load), zmm_bcast);
+                                }
+                            }
+                        } else {
+                            int div_num = 2;
+                            for (int a = 0; a < div_num; a++) {
+                                if (a == 0) {
+                                    for (int i_ur = 0; i_ur < ur / 2; ++i_ur) {
+                                        auto zmm_bcast = (i_ur == 0)
+                                                ? vmm_bcast
+                                                : ZReg(reg_idx + i_ur);
+                                        bcast_ptr(zmm_bcast, i_reduce,
+                                                a * ur / 2 + i_ur, false);
+                                    }
+                                }
+                                for (int i_ur = 0; i_ur < ur / 2; ++i_ur) {
+                                    auto zmm_bcast = (i_ur == 0)
+                                            ? vmm_bcast
+                                            : ZReg(reg_idx + i_ur);
+                                    xa_->add(zmm_bcast.b, zmm_bcast.b,
+                                            vmm_shift.b);
+                                    for (int i_load = 0; i_load < load_loop_blk;
+                                            ++i_load) {
+                                        compute(vreg_accum(i_load,
+                                                        a * ur / 2 + i_ur),
+                                                vreg_load(i_load), zmm_bcast);
+                                    }
+                                    if (a < div_num - 1) {
+                                        bcast_ptr(zmm_bcast, i_reduce,
+                                                (a + 1) * ur / 2 + i_ur, false);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        for (int i_ur = 0; i_ur < ur; ++i_ur) {
+                            bcast_ptr(vmm_bcast, i_reduce, i_ur, false);
+                            xa_->add(vmm_bcast.b, vmm_bcast.b, vmm_shift.b);
+                            for (int i_load = 0; i_load < load_loop_blk;
+                                    ++i_load) {
+                                compute(vreg_accum(i_load, i_ur),
+                                        vreg_load(i_load), vmm_bcast);
+                            }
                         }
                     }
                 }
