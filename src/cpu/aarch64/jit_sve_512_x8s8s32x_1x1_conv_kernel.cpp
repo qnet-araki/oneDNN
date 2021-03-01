@@ -312,8 +312,10 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
 #endif
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
             const bool mask_flag = mask_flag_in && i_load == load_loop_blk - 1;
-            auto vmm_bias = vmm_tmp;
-            auto vmm_comp = vmm_bcast;
+            auto vmm_comp = vmm_tmp; // ZReg(28)
+            auto vmm_bias = vmm_bcast; // ZReg(31)
+            bool add_flag = false;
+            auto zmm_add_data = vmm_bias;
             if (jcp.with_bias) {
                 if (!jcp.signed_input)
                     ldr(reg_bias_data,
@@ -322,72 +324,46 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 switch (jcp.bia_dt) {
                     case data_type::f32:
                     case data_type::s32:
-                        bias_ptr(vmm_bias, i_load, mask_flag);
+                        bias_ptr(zmm_add_data, i_load, mask_flag);
                         break;
-#if 0
-		    case data_type::s8:
-                        xa_->sub(x22, x22, 64);
-                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        bias_ptr8(ZReg(29), i_load, mask_flag);
-                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
-                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
-                        sxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
-                        if (mask_flag) {
-                            xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
-                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
-                                    0);
-                        }
-                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        xa_->add(x22, x22, 64);
-                        break;
-                    case data_type::u8:
-                        xa_->sub(x22, x22, 64);
-                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        bias_ptr8(ZReg(29), i_load, mask_flag);
-                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
-                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
-                        uxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
-                        if (mask_flag) {
-                            xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
-                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
-                                    0);
-                        }
-                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        xa_->add(x22, x22, 64);
-                        break;
-#else
                     case data_type::s8:
-                        bias_ptr8(ZReg(27), i_load, mask_flag);
-                        zip1(ZRegB(27), ZRegB(27), ZRegB(27));
-                        zip1(ZRegH(27), ZRegH(27), ZRegH(27));
-                        sxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(27));
+                        xa_->sub(x22, x22, 64);
+                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
+                        bias_ptr8(ZReg(29), i_load, mask_flag);
+                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
+                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
+                        sxtb(ZRegS(zmm_add_data.getIdx()),
+                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
-                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
-                                    0);
+                            xa_->mov(zmm_add_data.s,
+                                    mask_tmp / Xbyak_aarch64::T_m, 0);
                         }
+                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
+                        xa_->add(x22, x22, 64);
                         break;
                     case data_type::u8:
-                        bias_ptr8(ZReg(27), i_load, mask_flag);
-                        zip1(ZRegB(27), ZRegB(27), ZRegB(27));
-                        zip1(ZRegH(27), ZRegH(27), ZRegH(27));
-                        uxtb(ZRegS(vmm_bias.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(27));
+                        xa_->sub(x22, x22, 64);
+                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
+                        bias_ptr8(ZReg(29), i_load, mask_flag);
+                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
+                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
+                        uxtb(ZRegS(zmm_add_data.getIdx()),
+                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
-                            xa_->mov(vmm_bias.s, mask_tmp / Xbyak_aarch64::T_m,
-                                    0);
+                            xa_->mov(zmm_add_data.s,
+                                    mask_tmp / Xbyak_aarch64::T_m, 0);
                         }
+                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
+                        xa_->add(x22, x22, 64);
                         break;
-#endif
                     default: assert(!"unsupported data type");
                 }
                 if (jcp.bia_dt != data_type::f32)
-                    scvtf(ZRegS(vmm_bias.getIdx()), vmask,
-                            ZRegS(vmm_bias.getIdx()));
+                    scvtf(ZRegS(zmm_add_data.getIdx()), vmask,
+                            ZRegS(zmm_add_data.getIdx()));
+                add_flag = true;
             }
             if (!jcp.signed_input) {
                 ldr(reg_comp_data,
@@ -395,6 +371,12 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 // cvt2ps(data_type::s32, vmm_comp, comp_ptr(i_load), mask_flag);
                 comp_ptr(vmm_comp, i_load, mask_flag);
                 scvtf(vmm_comp.s, vmask, vmm_comp.s);
+
+                if (!jcp.with_bias)
+                    eor(zmm_add_data.d, zmm_add_data.d, zmm_add_data.d);
+                xa_->fsub(zmm_add_data.s, zmm_add_data.s,
+                        vmm_comp.s); // vmm_bias - vmm_comp
+                add_flag = true;
             }
 #if 0
             if (jcp.src_zero_point) {
@@ -424,11 +406,13 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 auto r = vreg_accum(i_load, i_ur);
                 scvtf(ZRegS(r.getIdx()), PReg(vmask.getIdx()),
                         ZRegS(r.getIdx())); //< vcvtdq2ps(r, r);
-                if (!jcp.signed_input) xa_->fsub(r.s, r.s, vmm_comp.s);
 #if 0
                 if (jcp.src_zero_point) xa_->fadd(r.s, r.s, vmm_zp.s);
 #endif
-                if (jcp.with_bias) xa_->fadd(r.s, r.s, vmm_bias.s);
+                if (add_flag)
+                    xa_->fadd(r.s, r.s,
+                            zmm_add_data
+                                    .s); // zmm_add_data = vmm_bias - vmm_comp
 
                 // const Vmm mask_vmm = mask_flag ? r | ktail_mask | Xbyak_aarch64::T_z : r;
                 zmm_t mask_vmm = r;
