@@ -313,9 +313,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
             const bool mask_flag = mask_flag_in && i_load == load_loop_blk - 1;
             auto vmm_comp = vmm_tmp; // ZReg(28)
-            auto vmm_bias = vmm_bcast; // ZReg(31)
+            auto zmm_add_data = vmm_bcast; // ZReg(31): vmm_bias
             bool add_flag = false;
-            auto zmm_add_data = vmm_bias;
             if (jcp.with_bias) {
                 if (!jcp.signed_input)
                     ldr(reg_bias_data,
@@ -327,36 +326,28 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         bias_ptr(zmm_add_data, i_load, mask_flag);
                         break;
                     case data_type::s8:
-                        xa_->sub(x22, x22, 64);
-                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        bias_ptr8(ZReg(29), i_load, mask_flag);
-                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
-                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
+                        bias_ptr8(ZReg(28), i_load, mask_flag);
+                        zip1(ZRegB(28), ZRegB(28), ZRegB(28));
+                        zip1(ZRegH(28), ZRegH(28), ZRegH(28));
                         sxtb(ZRegS(zmm_add_data.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
+                                vmask / Xbyak_aarch64::T_m, ZRegS(28));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                             xa_->mov(zmm_add_data.s,
                                     mask_tmp / Xbyak_aarch64::T_m, 0);
                         }
-                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        xa_->add(x22, x22, 64);
                         break;
                     case data_type::u8:
-                        xa_->sub(x22, x22, 64);
-                        str(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        bias_ptr8(ZReg(29), i_load, mask_flag);
-                        zip1(ZRegB(29), ZRegB(29), ZRegB(29));
-                        zip1(ZRegH(29), ZRegH(29), ZRegH(29));
+                        bias_ptr8(ZReg(28), i_load, mask_flag);
+                        zip1(ZRegB(28), ZRegB(28), ZRegB(28));
+                        zip1(ZRegH(28), ZRegH(28), ZRegH(28));
                         uxtb(ZRegS(zmm_add_data.getIdx()),
-                                vmask / Xbyak_aarch64::T_m, ZRegS(29));
+                                vmask / Xbyak_aarch64::T_m, ZRegS(28));
                         if (mask_flag) {
                             xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
                             xa_->mov(zmm_add_data.s,
                                     mask_tmp / Xbyak_aarch64::T_m, 0);
                         }
-                        ldr(ZReg(29), Xbyak_aarch64::ptr(x22));
-                        xa_->add(x22, x22, 64);
                         break;
                     default: assert(!"unsupported data type");
                 }
