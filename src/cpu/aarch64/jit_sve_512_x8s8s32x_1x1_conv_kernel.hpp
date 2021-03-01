@@ -70,7 +70,7 @@ private:
     const XReg reg_ptr_sum_scale = x10;
     const XReg reg_reduce_loop_work = x11;
     const XReg reg_bias_data = x12;
-    const XReg reg_comp_data = x12;
+    const XReg reg_comp_data = x13;
     const XReg reg_scratch = x13;
     const XReg aux_reg_bcast_data = x14;
     const XReg aux_reg_load_data = x15;

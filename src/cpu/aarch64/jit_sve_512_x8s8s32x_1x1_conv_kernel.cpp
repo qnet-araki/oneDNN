@@ -310,15 +310,19 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                     SVE_compress_addr(reg_rsp, reg_src_zero_point_off));
         }
 #endif
+
+        if (!jcp.signed_input) {
+            ldr(reg_comp_data, SVE_compress_addr(reg_rsp, reg_comp_data_off));
+            if (jcp.with_bias)
+                ldr(reg_bias_data,
+                        SVE_compress_addr(reg_rsp, reg_bias_data_off));
+        }
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
             const bool mask_flag = mask_flag_in && i_load == load_loop_blk - 1;
             auto vmm_comp = vmm_tmp; // ZReg(28)
             auto zmm_add_data = vmm_bcast; // ZReg(31): vmm_bias
             bool add_flag = false;
             if (jcp.with_bias) {
-                if (!jcp.signed_input)
-                    ldr(reg_bias_data,
-                            SVE_compress_addr(reg_rsp, reg_bias_data_off));
                 //cvt2ps(jcp.bia_dt, vmm_bias, bias_ptr(i_load), mask_flag);
                 switch (jcp.bia_dt) {
                     case data_type::f32:
@@ -357,8 +361,6 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 add_flag = true;
             }
             if (!jcp.signed_input) {
-                ldr(reg_comp_data,
-                        SVE_compress_addr(reg_rsp, reg_comp_data_off));
                 // cvt2ps(data_type::s32, vmm_comp, comp_ptr(i_load), mask_flag);
                 comp_ptr(vmm_comp, i_load, mask_flag);
                 scvtf(vmm_comp.s, vmask, vmm_comp.s);
