@@ -393,28 +393,33 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
 #endif
             auto vmm_scale = vmm_one;
             scale_ptr(vmm_scale, i_load);
-            for (int i_ur = 0; i_ur < ur; ++i_ur) {
-                auto r = vreg_accum(i_load, i_ur);
-                scvtf(ZRegS(r.getIdx()), PReg(vmask.getIdx()),
-                        ZRegS(r.getIdx())); //< vcvtdq2ps(r, r);
+            for (int i_ur = 0; i_ur < ur; ++i_ur)
+                scvtf(ZRegS(vreg_accum(i_load, i_ur).getIdx()),
+                        PReg(vmask.getIdx()),
+                        ZRegS(vreg_accum(i_load, i_ur)
+                                        .getIdx())); //< vcvtdq2ps(r, r);
 #if 0
-                if (jcp.src_zero_point) xa_->fadd(r.s, r.s, vmm_zp.s);
+            if (jcp.src_zero_point) {
+                for (int i_ur = 0; i_ur < ur; ++i_ur) xa_->fadd(vreg_accum(i_load, i_ur).s, vreg_accum(i_load, i_ur).s, vmm_zp.s);
+            }
 #endif
-                if (add_flag)
-                    xa_->fadd(r.s, r.s,
+            if (add_flag) {
+                for (int i_ur = 0; i_ur < ur; ++i_ur)
+                    xa_->fadd(vreg_accum(i_load, i_ur).s,
+                            vreg_accum(i_load, i_ur).s,
                             zmm_add_data
                                     .s); // zmm_add_data = vmm_bias - vmm_comp
+            }
 
-                // const Vmm mask_vmm = mask_flag ? r | ktail_mask | Xbyak_aarch64::T_z : r;
-                zmm_t mask_vmm = r;
-                // vmulps(mask_vmm, r, scale_ptr(i_load));
-                xa_->fmul(ZRegS(mask_vmm.getIdx()), ZRegS(r.getIdx()),
+            for (int i_ur = 0; i_ur < ur; ++i_ur)
+                xa_->fmul(ZRegS(vreg_accum(i_load, i_ur).getIdx()),
+                        ZRegS(vreg_accum(i_load, i_ur).getIdx()),
                         ZRegS(vmm_scale.getIdx()));
-                if (mask_flag) {
-                    xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
-                    xa_->mov(ZRegS(mask_vmm.getIdx()),
+            if (mask_flag) {
+                xa_->not_(mask_tmp.b, vmask.b, ktail_mask.b);
+                for (int i_ur = 0; i_ur < ur; ++i_ur)
+                    xa_->mov(ZRegS(vreg_accum(i_load, i_ur).getIdx()),
                             mask_tmp / Xbyak_aarch64::T_m, 0);
-                }
             }
         }
 
