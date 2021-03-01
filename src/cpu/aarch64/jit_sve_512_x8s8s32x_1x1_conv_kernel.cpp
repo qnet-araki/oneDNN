@@ -363,12 +363,6 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
             if (!jcp.signed_input) {
                 // cvt2ps(data_type::s32, vmm_comp, comp_ptr(i_load), mask_flag);
                 comp_ptr(vmm_comp, i_load, mask_flag);
-                scvtf(vmm_comp.s, vmask, vmm_comp.s);
-
-                if (!jcp.with_bias)
-                    eor(zmm_add_data.d, zmm_add_data.d, zmm_add_data.d);
-                xa_->fsub(zmm_add_data.s, zmm_add_data.s,
-                        vmm_comp.s); // vmm_bias - vmm_comp
                 add_flag = true;
             }
 #if 0
@@ -405,6 +399,14 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                 for (int i_ur = 0; i_ur < ur; ++i_ur) xa_->fadd(vreg_accum(i_load, i_ur).s, vreg_accum(i_load, i_ur).s, vmm_zp.s);
             }
 #endif
+            if (!jcp.signed_input) {
+                scvtf(vmm_comp.s, vmask, vmm_comp.s);
+                if (!jcp.with_bias)
+                    eor(zmm_add_data.d, zmm_add_data.d, zmm_add_data.d);
+                xa_->fsub(zmm_add_data.s, zmm_add_data.s,
+                        vmm_comp.s); // vmm_bias - vmm_comp
+            }
+
             if (add_flag) {
                 for (int i_ur = 0; i_ur < ur; ++i_ur)
                     xa_->fadd(vreg_accum(i_load, i_ur).s,
@@ -412,7 +414,6 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                             zmm_add_data
                                     .s); // zmm_add_data = vmm_bias - vmm_comp
             }
-
             for (int i_ur = 0; i_ur < ur; ++i_ur)
                 xa_->fmul(ZRegS(vreg_accum(i_load, i_ur).getIdx()),
                         ZRegS(vreg_accum(i_load, i_ur).getIdx()),
