@@ -776,8 +776,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                 bool is_opt = vmm_inp(_start, nb_oc_block).getIdx() >= 24
                         && vmm_inp(_end - 1, nb_oc_block).getIdx() <= 29;
                 if (is_opt) {
-                    for (int a = 0; a < 2; a++) {
-                        for (int ii = 0; ii < nb_oc_block / 2; ii++) {
+                    for (int a = 0; a < nb_oc_block / 2; a++) {
+                        for (int ii = 0; ii < 2; ii++) {
                             int _ii = a * 2 + ii;
                             int aux_kernel_offset = kernel_offset(_ii, ic, ki);
                             auto reg_addr = get_comp_addr_reg(
@@ -787,7 +787,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                             ld1w(_vmm_wei.s, mask_all_one,
                                     Xbyak_aarch64::ptr(reg_addr));
                         }
-                        for (int ii = 0; ii < nb_oc_block / 2; ii++) {
+                        for (int ii = 0; ii < 2; ii++) {
                             int _ii = a * 2 + ii;
                             for (int jj = _start; jj < _end; jj++) {
                                 auto inp = vmm_inp(jj, nb_oc_block);
@@ -797,11 +797,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                             }
                         }
                     }
-                    if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
-                        xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
-                        dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
-                    } else {
-                        dup(vmm_shift.b, -128);
+                    if (!jcp.signed_input) {
+                        if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
+                            xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
+                            dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
+                        } else {
+                            dup(vmm_shift.b, -128);
+                        }
                     }
                 } else {
                     for (int ii = 0; ii < nb_oc_block; ii++) {
