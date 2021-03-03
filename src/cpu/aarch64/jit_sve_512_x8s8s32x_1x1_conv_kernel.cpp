@@ -686,7 +686,8 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         : ((i_ur % 4) == 1) ? reg_tmp1_imm
                                             : ((i_ur % 4) == 2) ? reg_tmp2_imm
                                                                 : reg_tmp3_imm;
-                add_imm(reg_tmp_adr, XReg(base.getIdx()), re, reg_tmp_imm);
+#if 0
+		add_imm(reg_tmp_adr, XReg(base.getIdx()), re, reg_tmp_imm);
 
                 auto _mask = mask_flag ? ktail_mask : vmask;
                 switch (jcp.dst_dt) {
@@ -708,6 +709,42 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
                         break;
                     default: assert(!"unknown dst_dt");
                 }
+#else
+                auto _mask = mask_flag ? ktail_mask : vmask;
+                switch (jcp.dst_dt) {
+                    case data_type::f32:
+                    case data_type::s32:
+                        if (mask_flag) {
+                            add_imm(reg_tmp_adr, XReg(base.getIdx()), re,
+                                    reg_tmp_imm);
+                            st1w(r_vmm.s, _mask,
+                                    Xbyak_aarch64::ptr(reg_tmp_adr));
+                        } else {
+                            if ((re / 64 < 256) && (re % 64 == 0)) {
+                                str(r_vmm, Xbyak_aarch64::ptr(base, re / 64));
+                            } else {
+                                add_imm(reg_tmp_adr, XReg(base.getIdx()), re,
+                                        reg_tmp_imm);
+                                str(r_vmm, Xbyak_aarch64::ptr(reg_tmp_adr));
+                            }
+                        }
+                        break;
+                    case data_type::s8:
+                        add_imm(reg_tmp_adr, XReg(base.getIdx()), re,
+                                reg_tmp_imm);
+                        smin(r_vmm.s, 127);
+                        smax(r_vmm.s, -128);
+                        st1b(r_vmm.s, _mask, Xbyak_aarch64::ptr(reg_tmp_adr));
+                        break;
+                    case data_type::u8:
+                        add_imm(reg_tmp_adr, XReg(base.getIdx()), re,
+                                reg_tmp_imm);
+                        umin(r_vmm.s, 255);
+                        st1b(r_vmm.s, _mask, Xbyak_aarch64::ptr(reg_tmp_adr));
+                        break;
+                    default: assert(!"unknown dst_dt");
+                }
+#endif
             }
         }
         ldr(reg_bcast_data, SVE_compress_addr(reg_rsp, reg_bcast_data_off));
