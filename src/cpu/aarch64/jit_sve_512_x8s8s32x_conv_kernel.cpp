@@ -752,7 +752,7 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                     : ic_block / 4;
             bool is_opt2 = (nb_oc_block == 2) && (icb % 2 == 0)
                     && (vmm_inp(_end, nb_oc_block + 1).getIdx() <= 28);
-            if ((is_opt2) && (!jcp.signed_input)) {
+            if (is_opt2) {
                 for (int ic = 0; ic < icb / 2; ic++) {
                     for (int a = 0; a < 2; a++) {
                         for (int jj = _start; jj < _end; jj++) {
@@ -813,16 +813,20 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                                 }
                             } else {
                                 /* fill padded area with shifted values */
-                                auto inp = vmm_inp(jj, nb_oc_block + a);
-                                xa_->mov(inp.d, vmm_shift.d);
+                                if (!jcp.signed_input) {
+                                    auto inp = vmm_inp(jj, nb_oc_block + a);
+                                    xa_->mov(inp.d, vmm_shift.d);
+                                }
                             }
                         }
                     }
-                    for (int a = 0; a < 2; a++) {
-                        for (int jj = jj_start; jj < jj_end; jj++) {
-                            xa_->add(vmm_inp(jj, nb_oc_block + a).b,
-                                    vmm_inp(jj, nb_oc_block + a).b,
-                                    vmm_shift.b);
+                    if (!jcp.signed_input) {
+                        for (int a = 0; a < 2; a++) {
+                            for (int jj = jj_start; jj < jj_end; jj++) {
+                                xa_->add(vmm_inp(jj, nb_oc_block + a).b,
+                                        vmm_inp(jj, nb_oc_block + a).b,
+                                        vmm_shift.b);
+                            }
                         }
                     }
                     for (int a = 0; a < 2; a++) {
@@ -839,7 +843,6 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                                     Xbyak_aarch64::ptr(reg_addr));
                         }
                     }
-                    //}
                     for (int a = 0; a < 2; a++) {
                         for (int ii = 0; ii < nb_oc_block; ii++) {
                             for (int jj = _start; jj < _end; jj++) {
@@ -852,11 +855,13 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                             }
                         }
                     }
-                    if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
-                        xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
-                        dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
-                    } else {
-                        dup(vmm_shift.b, -128);
+                    if (!jcp.signed_input) {
+                        if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
+                            xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
+                            dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
+                        } else {
+                            dup(vmm_shift.b, -128);
+                        }
                     }
                 }
             } else {
