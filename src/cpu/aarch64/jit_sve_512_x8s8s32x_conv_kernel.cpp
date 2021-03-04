@@ -750,131 +750,249 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
             int icb = (last_ic_block_flag != no_last_block)
                     ? div_up((jcp.ic_without_padding % ic_block), 4)
                     : ic_block / 4;
-            for (int ic = 0; ic < icb; ic++) {
-                for (int jj = _start; jj < _end; jj++) {
-                    int aux_input_offset = input_offset(jj, ic, ki);
-                    if (jj >= jj_start && jj < jj_end) {
-                        if (last_ic_block_flag == last_sp_block
-                                && ic_tail_size != 0 && ic == icb - 1) {
-                            auto xmm_tmp = VReg16B(
-                                    vmm_inp(jj, nb_oc_block).getIdx());
-                            for (int r = 0; r < ic_tail_size; ++r) {
-                                add_imm(reg_tmp0_adr, aux_reg_inp,
-                                        (aux_input_offset + r), reg_tmp0_imm);
-                                ldrb(WReg(reg_tmp1_imm.getIdx()),
-                                        Xbyak_aarch64::ptr(reg_tmp0_adr));
-                                ins(VReg16B(xmm_tmp.getIdx())[r],
-                                        WReg(reg_tmp1_imm.getIdx()));
-                            }
-                            dup(vmm_inp(jj, nb_oc_block).s,
-                                    ZRegS(xmm_tmp.getIdx())[0]);
-                        } else {
-                            auto base = aux_reg_inp;
-                            auto re = get_offset(aux_input_offset);
+            bool is_opt2 = (nb_oc_block == 2) && (icb % 2 == 0)
+                    && (vmm_inp(_end, nb_oc_block + 1).getIdx() <= 28);
+            if ((is_opt2) && (!jcp.signed_input)) {
+                for (int ic = 0; ic < icb / 2; ic++) {
+                    for (int a = 0; a < 2; a++) {
+                        for (int jj = _start; jj < _end; jj++) {
+                            int aux_input_offset
+                                    = input_offset(jj, ic * 2 + a, ki);
+                            if (jj >= jj_start && jj < jj_end) {
+                                if (last_ic_block_flag == last_sp_block
+                                        && ic_tail_size != 0
+                                        && ic == icb / 2 - 1 && a == 1) {
+                                    auto xmm_tmp = VReg16B(
+                                            vmm_inp(jj, nb_oc_block + a)
+                                                    .getIdx());
+                                    for (int r = 0; r < ic_tail_size; ++r) {
+                                        add_imm(reg_tmp0_adr, aux_reg_inp,
+                                                (aux_input_offset + r),
+                                                reg_tmp0_imm);
+                                        ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                                Xbyak_aarch64::ptr(
+                                                        reg_tmp0_adr));
+                                        ins(VReg16B(xmm_tmp.getIdx())[r],
+                                                WReg(reg_tmp1_imm.getIdx()));
+                                    }
+                                    dup(vmm_inp(jj, nb_oc_block + a).s,
+                                            ZRegS(xmm_tmp.getIdx())[0]);
+                                } else {
+                                    auto base = aux_reg_inp;
+                                    auto re = get_offset(aux_input_offset);
 
-                            if ((-0x40 <= re) && (re < 0x40) && ((re % 4) == 0))
-                                ld1rw(vmm_inp(jj, nb_oc_block).s, mask_all_one,
-                                        Xbyak_aarch64::ptr(base,
-                                                static_cast<int32_t>(re)));
-                            else {
-                                auto reg_tmp_adr = ((jj % 4) == 0)
-                                        ? reg_tmp0_adr
-                                        : ((jj % 4) == 1) ? reg_tmp1_adr
-                                                          : ((jj % 4) == 2)
-                                                        ? reg_tmp2_adr
-                                                        : reg_tmp3_adr;
-                                auto reg_tmp_imm = ((jj % 4) == 0)
-                                        ? reg_tmp0_imm
-                                        : ((jj % 4) == 1) ? reg_tmp1_imm
-                                                          : ((jj % 4) == 2)
-                                                        ? reg_tmp2_imm
-                                                        : reg_tmp3_imm;
-                                add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
-                                ld1rw(vmm_inp(jj, nb_oc_block).s, mask_all_one,
-                                        Xbyak_aarch64::ptr(reg_tmp_adr));
+                                    if ((-0x40 <= re) && (re < 0x40)
+                                            && ((re % 4) == 0))
+                                        ld1rw(vmm_inp(jj, nb_oc_block + a).s,
+                                                mask_all_one,
+                                                Xbyak_aarch64::ptr(base,
+                                                        static_cast<int32_t>(
+                                                                re)));
+                                    else {
+                                        auto reg_tmp_adr = ((jj % 4) == 0)
+                                                ? reg_tmp0_adr
+                                                : ((jj % 4) == 1)
+                                                        ? reg_tmp1_adr
+                                                        : ((jj % 4) == 2)
+                                                                ? reg_tmp2_adr
+                                                                : reg_tmp3_adr;
+                                        auto reg_tmp_imm = ((jj % 4) == 0)
+                                                ? reg_tmp0_imm
+                                                : ((jj % 4) == 1)
+                                                        ? reg_tmp1_imm
+                                                        : ((jj % 4) == 2)
+                                                                ? reg_tmp2_imm
+                                                                : reg_tmp3_imm;
+                                        add_imm(reg_tmp_adr, base, re,
+                                                reg_tmp_imm);
+                                        ld1rw(vmm_inp(jj, nb_oc_block + a).s,
+                                                mask_all_one,
+                                                Xbyak_aarch64::ptr(
+                                                        reg_tmp_adr));
+                                    }
+                                }
+                            } else {
+                                /* fill padded area with shifted values */
+                                auto inp = vmm_inp(jj, nb_oc_block + a);
+                                xa_->mov(inp.d, vmm_shift.d);
                             }
-                        }
-                    } else {
-                        /* fill padded area with shifted values */
-                        if (!jcp.signed_input) {
-                            auto inp = vmm_inp(jj, nb_oc_block);
-                            xa_->mov(inp.d, vmm_shift.d);
                         }
                     }
-                }
-                for (int jj = jj_start; jj < jj_end; jj++) {
-                    if (!jcp.signed_input)
-                        xa_->add(vmm_inp(jj, nb_oc_block).b,
-                                vmm_inp(jj, nb_oc_block).b, vmm_shift.b);
-                }
-                bool is_opt = vmm_inp(_start, nb_oc_block).getIdx() >= 24
-                        && vmm_inp(_end - 1, nb_oc_block).getIdx() <= 29;
-                if (is_opt) {
-                    for (int a = 0; a < nb_oc_block / 2; a++) {
-                        for (int ii = 0; ii < 2; ii++) {
-                            int _ii = a * 2 + ii;
-                            int aux_kernel_offset = kernel_offset(_ii, ic, ki);
+                    for (int a = 0; a < 2; a++) {
+                        for (int jj = jj_start; jj < jj_end; jj++) {
+                            xa_->add(vmm_inp(jj, nb_oc_block + a).b,
+                                    vmm_inp(jj, nb_oc_block + a).b,
+                                    vmm_shift.b);
+                        }
+                    }
+                    for (int a = 0; a < 2; a++) {
+                        for (int ii = 0; ii < nb_oc_block; ii++) {
+                            int aux_kernel_offset
+                                    = kernel_offset(ii, ic * 2 + a, ki);
                             auto reg_addr = get_comp_addr_reg(
                                     aux_reg_ker, aux_kernel_offset);
                             auto _vmm_wei
-                                    = ((_ii % 2) == 0) ? vmm_wei : vmm_shift;
+                                    = ((a == 1) && (ii == nb_oc_block - 1))
+                                    ? vmm_wei
+                                    : vmm_inp(2 * a + ii, nb_oc_block + 2);
                             ld1w(_vmm_wei.s, mask_all_one,
                                     Xbyak_aarch64::ptr(reg_addr));
                         }
-                        for (int ii = 0; ii < 2; ii++) {
-                            int _ii = a * 2 + ii;
+                    }
+                    //}
+                    for (int a = 0; a < 2; a++) {
+                        for (int ii = 0; ii < nb_oc_block; ii++) {
                             for (int jj = _start; jj < _end; jj++) {
+                                auto inp = vmm_inp(jj, nb_oc_block + a);
+                                auto _vmm_wei
+                                        = ((a == 1) && (ii == nb_oc_block - 1))
+                                        ? vmm_wei
+                                        : vmm_inp(2 * a + ii, nb_oc_block + 2);
+                                compute(vmm_out(jj, ii), _vmm_wei, inp);
+                            }
+                        }
+                    }
+                    if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
+                        xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
+                        dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
+                    } else {
+                        dup(vmm_shift.b, -128);
+                    }
+                }
+            } else {
+                for (int ic = 0; ic < icb; ic++) {
+                    for (int jj = _start; jj < _end; jj++) {
+                        int aux_input_offset = input_offset(jj, ic, ki);
+                        if (jj >= jj_start && jj < jj_end) {
+                            if (last_ic_block_flag == last_sp_block
+                                    && ic_tail_size != 0 && ic == icb - 1) {
+                                auto xmm_tmp = VReg16B(
+                                        vmm_inp(jj, nb_oc_block).getIdx());
+                                for (int r = 0; r < ic_tail_size; ++r) {
+                                    add_imm(reg_tmp0_adr, aux_reg_inp,
+                                            (aux_input_offset + r),
+                                            reg_tmp0_imm);
+                                    ldrb(WReg(reg_tmp1_imm.getIdx()),
+                                            Xbyak_aarch64::ptr(reg_tmp0_adr));
+                                    ins(VReg16B(xmm_tmp.getIdx())[r],
+                                            WReg(reg_tmp1_imm.getIdx()));
+                                }
+                                dup(vmm_inp(jj, nb_oc_block).s,
+                                        ZRegS(xmm_tmp.getIdx())[0]);
+                            } else {
+                                auto base = aux_reg_inp;
+                                auto re = get_offset(aux_input_offset);
+
+                                if ((-0x40 <= re) && (re < 0x40)
+                                        && ((re % 4) == 0))
+                                    ld1rw(vmm_inp(jj, nb_oc_block).s,
+                                            mask_all_one,
+                                            Xbyak_aarch64::ptr(base,
+                                                    static_cast<int32_t>(re)));
+                                else {
+                                    auto reg_tmp_adr = ((jj % 4) == 0)
+                                            ? reg_tmp0_adr
+                                            : ((jj % 4) == 1) ? reg_tmp1_adr
+                                                              : ((jj % 4) == 2)
+                                                            ? reg_tmp2_adr
+                                                            : reg_tmp3_adr;
+                                    auto reg_tmp_imm = ((jj % 4) == 0)
+                                            ? reg_tmp0_imm
+                                            : ((jj % 4) == 1) ? reg_tmp1_imm
+                                                              : ((jj % 4) == 2)
+                                                            ? reg_tmp2_imm
+                                                            : reg_tmp3_imm;
+                                    add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+                                    ld1rw(vmm_inp(jj, nb_oc_block).s,
+                                            mask_all_one,
+                                            Xbyak_aarch64::ptr(reg_tmp_adr));
+                                }
+                            }
+                        } else {
+                            /* fill padded area with shifted values */
+                            if (!jcp.signed_input) {
                                 auto inp = vmm_inp(jj, nb_oc_block);
+                                xa_->mov(inp.d, vmm_shift.d);
+                            }
+                        }
+                    }
+                    for (int jj = jj_start; jj < jj_end; jj++) {
+                        if (!jcp.signed_input)
+                            xa_->add(vmm_inp(jj, nb_oc_block).b,
+                                    vmm_inp(jj, nb_oc_block).b, vmm_shift.b);
+                    }
+                    bool is_opt = vmm_inp(_start, nb_oc_block).getIdx() >= 24
+                            && vmm_inp(_end - 1, nb_oc_block).getIdx() <= 29;
+                    if (is_opt) {
+                        for (int a = 0; a < nb_oc_block / 2; a++) {
+                            for (int ii = 0; ii < 2; ii++) {
+                                int _ii = a * 2 + ii;
+                                int aux_kernel_offset
+                                        = kernel_offset(_ii, ic, ki);
+                                auto reg_addr = get_comp_addr_reg(
+                                        aux_reg_ker, aux_kernel_offset);
                                 auto _vmm_wei = ((_ii % 2) == 0) ? vmm_wei
                                                                  : vmm_shift;
-                                compute(vmm_out(jj, _ii), _vmm_wei, inp);
+                                ld1w(_vmm_wei.s, mask_all_one,
+                                        Xbyak_aarch64::ptr(reg_addr));
+                            }
+                            for (int ii = 0; ii < 2; ii++) {
+                                int _ii = a * 2 + ii;
+                                for (int jj = _start; jj < _end; jj++) {
+                                    auto inp = vmm_inp(jj, nb_oc_block);
+                                    auto _vmm_wei = ((_ii % 2) == 0)
+                                            ? vmm_wei
+                                            : vmm_shift;
+                                    compute(vmm_out(jj, _ii), _vmm_wei, inp);
+                                }
                             }
                         }
-                    }
-                    if (!jcp.signed_input) {
-                        if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
-                            xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
-                            dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
-                        } else {
-                            dup(vmm_shift.b, -128);
-                        }
-                    }
-                } else {
-                    for (int ii = 0; ii < nb_oc_block; ii++) {
                         if (!jcp.signed_input) {
-                            int aux_kernel_offset = kernel_offset(ii, ic, ki);
-                            auto reg_addr = get_comp_addr_reg(
-                                    aux_reg_ker, aux_kernel_offset);
-                            ld1w(vmm_wei.s, mask_all_one,
-                                    Xbyak_aarch64::ptr(reg_addr));
-                            for (int jj = _start; jj < _end; jj++) {
-                                auto inp = vmm_inp(jj, nb_oc_block);
-                                compute(vmm_out(jj, ii), vmm_wei, inp);
+                            if (jcp.is_depthwise && !jcp.is_fast_depthwise) {
+                                xa_->mov_imm(WReg(reg_tmp0_imm.getIdx()), 128);
+                                dup(vmm_shift.s, WReg(reg_tmp0_imm.getIdx()));
+                            } else {
+                                dup(vmm_shift.b, -128);
                             }
-                        } else {
-                            if (ii == 0) {
+                        }
+                    } else {
+                        for (int ii = 0; ii < nb_oc_block; ii++) {
+                            if (!jcp.signed_input) {
                                 int aux_kernel_offset
                                         = kernel_offset(ii, ic, ki);
                                 auto reg_addr = get_comp_addr_reg(
                                         aux_reg_ker, aux_kernel_offset);
                                 ld1w(vmm_wei.s, mask_all_one,
                                         Xbyak_aarch64::ptr(reg_addr));
-                            }
-                            if ((ii + 1) < nb_oc_block) {
-                                int aux_kernel_offset
-                                        = kernel_offset((ii + 1), ic, ki);
-                                auto _vmm_wei
-                                        = ((ii % 2) == 0) ? vmm_comp : vmm_wei;
-                                auto reg_addr = get_comp_addr_reg(
-                                        aux_reg_ker, aux_kernel_offset);
-                                ld1w(_vmm_wei.s, mask_all_one,
-                                        Xbyak_aarch64::ptr(reg_addr));
-                            }
-                            for (int jj = _start; jj < _end; jj++) {
-                                auto _vmm_wei
-                                        = ((ii % 2) == 0) ? vmm_wei : vmm_comp;
-                                auto inp = vmm_inp(jj, nb_oc_block);
-                                compute(vmm_out(jj, ii), _vmm_wei, inp);
+                                for (int jj = _start; jj < _end; jj++) {
+                                    auto inp = vmm_inp(jj, nb_oc_block);
+                                    compute(vmm_out(jj, ii), vmm_wei, inp);
+                                }
+                            } else {
+                                if (ii == 0) {
+                                    int aux_kernel_offset
+                                            = kernel_offset(ii, ic, ki);
+                                    auto reg_addr = get_comp_addr_reg(
+                                            aux_reg_ker, aux_kernel_offset);
+                                    ld1w(vmm_wei.s, mask_all_one,
+                                            Xbyak_aarch64::ptr(reg_addr));
+                                }
+                                if ((ii + 1) < nb_oc_block) {
+                                    int aux_kernel_offset
+                                            = kernel_offset((ii + 1), ic, ki);
+                                    auto _vmm_wei = ((ii % 2) == 0) ? vmm_comp
+                                                                    : vmm_wei;
+                                    auto reg_addr = get_comp_addr_reg(
+                                            aux_reg_ker, aux_kernel_offset);
+                                    ld1w(_vmm_wei.s, mask_all_one,
+                                            Xbyak_aarch64::ptr(reg_addr));
+                                }
+                                for (int jj = _start; jj < _end; jj++) {
+                                    auto _vmm_wei = ((ii % 2) == 0) ? vmm_wei
+                                                                    : vmm_comp;
+                                    auto inp = vmm_inp(jj, nb_oc_block);
+                                    compute(vmm_out(jj, ii), _vmm_wei, inp);
+                                }
                             }
                         }
                     }
