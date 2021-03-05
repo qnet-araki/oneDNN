@@ -345,7 +345,8 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                                               : ((j % 4) == 1)
                             ? reg_tmp1_imm
                             : ((j % 4) == 2) ? reg_tmp2_imm : reg_tmp3_imm;
-            add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+#if 0
+	    add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
 
             auto vmm = vmm_out(j, k);
 
@@ -366,6 +367,39 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
                     break;
                 default: assert(!"unknown dst_dt");
             }
+#else
+            auto vmm = vmm_out(j, k);
+
+            auto _mask = mask_flag ? ktail_mask : mask_all_one;
+            switch (jcp.dst_dt) {
+                case data_type::f32:
+                case data_type::s32:
+                    if ((sve_len_ != 64) || mask_flag) {
+                        add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+                        st1w(vmm.s, _mask, Xbyak_aarch64::ptr(reg_tmp_adr));
+                    } else {
+                        if ((re / 64 < 256) && (re % 64 == 0)) {
+                            str(vmm, Xbyak_aarch64::ptr(base, re / 64));
+                        } else {
+                            add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+                            str(vmm, Xbyak_aarch64::ptr(reg_tmp_adr));
+                        }
+                    }
+                    break;
+                case data_type::s8:
+                    add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+                    smin(vmm.s, 127);
+                    smax(vmm.s, -128);
+                    st1b(vmm.s, _mask, Xbyak_aarch64::ptr(reg_tmp_adr));
+                    break;
+                case data_type::u8:
+                    add_imm(reg_tmp_adr, base, re, reg_tmp_imm);
+                    umin(vmm.s, 255);
+                    st1b(vmm.s, _mask, Xbyak_aarch64::ptr(reg_tmp_adr));
+                    break;
+                default: assert(!"unknown dst_dt");
+            }
+#endif
         }
     }
 }
