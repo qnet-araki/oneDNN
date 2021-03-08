@@ -327,10 +327,10 @@ void jit_sve_512_x8s8s32x_fwd_kernel::store_output(
     }
 
     /* write out register to output_addr */
-    for (int k = 0; k < nb_oc_block; k++) {
-        const bool mask_flag
-                = last_oc_block_flag && k == nb_oc_block - 1 && mask_gflag;
-        for (int j = 0; j < ur_w; j++) {
+    for (int j = 0; j < ur_w; j++) {
+        for (int k = 0; k < nb_oc_block; k++) {
+            const bool mask_flag
+                    = last_oc_block_flag && k == nb_oc_block - 1 && mask_gflag;
             int aux_output_offset = jcp.typesize_out
                     * (k * oc_block + j * jcp.oc_without_padding * jcp.ngroups);
 
