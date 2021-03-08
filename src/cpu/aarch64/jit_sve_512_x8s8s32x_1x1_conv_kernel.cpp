@@ -629,9 +629,10 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
         }
 
         // store to the destination
-        for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-            const bool mask_flag = mask_flag_in && i_load == load_loop_blk - 1;
-            for (int i_ur = 0; i_ur < ur; ++i_ur) {
+        for (int i_ur = 0; i_ur < ur; ++i_ur) {
+            for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+                const bool mask_flag
+                        = mask_flag_in && i_load == load_loop_blk - 1;
                 auto r = vreg_accum(i_load, i_ur);
                 // const Vmm r_vmm = mask_flag ? r | ktail_mask : r;
                 zmm_t r_vmm = r;
