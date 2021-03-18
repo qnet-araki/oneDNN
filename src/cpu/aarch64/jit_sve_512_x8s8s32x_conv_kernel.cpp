@@ -740,6 +740,9 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
             }
         }
     } else {
+#if 1 // Prefetch injection mode Implementation
+        xa_->orr(aux_reg_inp, aux_reg_inp, (uint64_t(8) << 60));
+#endif
         for (int ki = 0; ki < kw; ki++) {
             int jj_start = get_ow_start(ki, pad_l);
             int jj_end = get_ow_end(ur_w, ki, pad_r);
@@ -1313,6 +1316,22 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
             * (jcp.ur_w * jcp.oc_without_padding * jcp.ngroups);
     preamble(true);
 
+#if 1 // Prefetch injection mode Implementation
+    uint64_t ctrl_val;
+#if 0
+    ctrl_val = (uint64_t(1) << 63) | (uint64_t(3) << 24) | (uint64_t(3) << 16);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
+#endif
+    ctrl_val = (uint64_t(1) << 63) | (uint64_t(1) << 60) | (0x400 << 2);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x6, 0x0, reg_tmp0_imm);
+
+    uint64_t distance_val = (uint64_t(2048) << 34) | (20480 << 2);
+    xa_->mov_imm(reg_tmp0_imm, distance_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x7, 0x0, reg_tmp0_imm);
+#endif
+
     vmm_mask_all_one();
     xa_->mov(reg_param1, abi_param1);
 
@@ -1543,6 +1562,12 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
         if (jcp.ur_w_tail != 0) { icb_loop(jcp.ur_w_tail, 0, r_pad, true); }
         L(end_label);
     }
+#if 0 // Prefetch injection mode Implementation
+    ctrl_val = uint64_t(0);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
+    xa_->msr(0x3, 0x3, 0xb, 0x6, 0x0, reg_tmp0_imm);
+#endif
     postamble();
 
     if (jcp.with_eltwise) eltwise_injector_->prepare_table();
