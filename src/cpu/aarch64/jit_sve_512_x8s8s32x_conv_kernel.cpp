@@ -741,7 +741,10 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
         }
     } else {
 #if 1 // Prefetch injection mode Implementation
-        xa_->orr(aux_reg_inp, aux_reg_inp, (uint64_t(8) << 60));
+        if ((input_offset(1, 0, 0) - input_offset(0, 0, 0)) == 0x400)
+            xa_->orr(aux_reg_inp, aux_reg_inp, (uint64_t(8) << 60));
+	else if ((input_offset(1, 0, 0) - input_offset(0, 0, 0)) == 0x200)
+            xa_->orr(aux_reg_inp, aux_reg_inp, (uint64_t(0xf) << 60));
 #endif
         for (int ki = 0; ki < kw; ki++) {
             int jj_start = get_ow_start(ki, pad_l);
@@ -923,7 +926,6 @@ void jit_sve_512_x8s8s32x_fwd_kernel::compute_ker(int ur_w, int pad_l,
                             } else {
                                 auto base = aux_reg_inp;
                                 auto re = get_offset(aux_input_offset);
-
                                 if ((-0x40 <= re) && (re < 0x40)
                                         && ((re % 4) == 0))
                                     ld1rw(vmm_inp(jj, nb_oc_block).s,
@@ -1318,18 +1320,26 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
 
 #if 1 // Prefetch injection mode Implementation
     uint64_t ctrl_val;
-#if 0
-    ctrl_val = (uint64_t(1) << 63) | (uint64_t(3) << 24) | (uint64_t(3) << 16);
+    uint64_t distance_val;
+#if 1
+    ctrl_val = (uint64_t(1) << 63);
     xa_->mov_imm(reg_tmp0_imm, ctrl_val);
     xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
 #endif
+    distance_val = (uint64_t(2048) << 34) | (20480 << 2);
+    xa_->mov_imm(reg_tmp0_imm, distance_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x7, 0x0, reg_tmp0_imm);
     ctrl_val = (uint64_t(1) << 63) | (uint64_t(1) << 60) | (0x400 << 2);
     xa_->mov_imm(reg_tmp0_imm, ctrl_val);
     xa_->msr(0x3, 0x3, 0xb, 0x6, 0x0, reg_tmp0_imm);
 
-    uint64_t distance_val = (uint64_t(2048) << 34) | (20480 << 2);
+    distance_val = (uint64_t(2048) << 34) | (10240 << 2);
+    //distance_val = (uint64_t(1024) << 34) | (10240 << 2);
     xa_->mov_imm(reg_tmp0_imm, distance_val);
-    xa_->msr(0x3, 0x3, 0xb, 0x7, 0x0, reg_tmp0_imm);
+    xa_->msr(0x3, 0x3, 0xb, 0x7, 0x7, reg_tmp0_imm);
+    ctrl_val = (uint64_t(1) << 63) | (uint64_t(1) << 60) | (0x200 << 2);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x6, 0x7, reg_tmp0_imm);
 #endif
 
     vmm_mask_all_one();
@@ -1565,8 +1575,9 @@ void jit_sve_512_x8s8s32x_fwd_kernel::generate() {
 #if 0 // Prefetch injection mode Implementation
     ctrl_val = uint64_t(0);
     xa_->mov_imm(reg_tmp0_imm, ctrl_val);
-    xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
+    //xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
     xa_->msr(0x3, 0x3, 0xb, 0x6, 0x0, reg_tmp0_imm);
+    xa_->msr(0x3, 0x3, 0xb, 0x6, 0x7, reg_tmp0_imm);
 #endif
     postamble();
 
