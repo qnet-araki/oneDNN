@@ -970,6 +970,9 @@ void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::reduce_loop(
     xa_->mov(aux_reg_load_data, reg_load_data);
 
     xa_->mov(aux_reg_bcast_data, aux1_reg_bcast_data);
+#if 1 // Prefetch injection mode Implementation
+    xa_->orr(aux_reg_bcast_data, aux_reg_bcast_data, (uint64_t(8) << 60));
+#endif
     init();
 
     xa_->mov(reduce_loop_iter, reg_reduce_loop_work);
@@ -1026,6 +1029,22 @@ template <typename Vmm>
 void _jit_sve_512_x8s8s32x_1x1_conv_kernel<Vmm>::generate() {
 
     preamble(true);
+#if 1 // Prefetch injection mode Implementation
+    uint64_t ctrl_val;
+    uint64_t distance_val;
+#if 1
+    ctrl_val = (uint64_t(1) << 63);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x4, 0x0, reg_tmp0_imm);
+#endif
+    distance_val = (uint64_t(2048) << 34) | (2048 * 5 << 2);
+    xa_->mov_imm(reg_tmp0_imm, distance_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x7, 0x0, reg_tmp0_imm);
+    ctrl_val = (uint64_t(1) << 63) | (uint64_t(1) << 60) | (0x200 << 2);
+    xa_->mov_imm(reg_tmp0_imm, ctrl_val);
+    xa_->msr(0x3, 0x3, 0xb, 0x6, 0x0, reg_tmp0_imm);
+#endif
+
     const int simd_w = jcp.ic_block;
 
     ptrue(PRegB(vmask.getIdx()));
